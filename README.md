@@ -38,7 +38,7 @@ Döndürülebilir bir küre üzerinde 241 ülke ve 4.454 il/eyalet var. Bir mark
 | Coğrafi veri | Natural Earth 10m admin-1 + 50m admin-0, TopoJSON'a derlenmiş |
 | Veritabanı | PostgreSQL (Supabase) — `pg` sürücüsü, transaction pooler |
 | Dağıtım | Vercel |
-| Ödeme | Henüz bağlı değil — arayüz soyutlaması hazır (`lib/payments.ts`) |
+| Ödeme | Whop checkout + imzalı webhook (`lib/whop.ts`, `lib/payments.ts`) |
 
 ---
 
