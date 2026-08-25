@@ -22,7 +22,7 @@ export default function MockPay({ intentId, territoryCode, alreadyPaid }: {
       if (!r.ok) { setMsg(d.error || 'Could not process payment.'); return }
       setLastEvent(d.eventId)
       if (d.duplicate) { setMsg('That event was already processed — the placement was not written twice.'); return }
-      window.location.href = `/?paid=1&t=${encodeURIComponent(territoryCode)}`
+      window.location.href = `/?payment=${encodeURIComponent(intentId)}&t=${encodeURIComponent(territoryCode)}`
     } catch {
       setMsg('Network error.')
     } finally { setBusy(false) }

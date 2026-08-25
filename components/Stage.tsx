@@ -80,6 +80,8 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
   // İlk açılışta dar ekranda kapalı başlar ki küre ortada tam görünsün.
   const [sheetOpen, setSheetOpen] = useState(true)
   const nonce = useRef(0)
+  const detailRequest = useRef(0)
+  const countryRequest = useRef(0)
 
   useEffect(() => {
     if (window.matchMedia('(max-width: 900px), (max-height: 640px)').matches) setSheetOpen(false)
@@ -158,19 +160,32 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
 
   // ----------------------------------------------------------- yönlendirme
   const loadDetail = useCallback(async (code: string) => {
+    const requestId = ++detailRequest.current
     setDetailLoading(true)
     try {
       const d: Detail = await fetch(`/api/territory?code=${encodeURIComponent(code)}`).then((r) => r.json())
+      if (requestId !== detailRequest.current) return null
       setDetail(d)
       return d
     } catch {
+      if (requestId !== detailRequest.current) return null
       setToast('Could not load this territory.')
       return null
-    } finally { setDetailLoading(false) }
+    } finally {
+      if (requestId === detailRequest.current) setDetailLoading(false)
+    }
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    detailRequest.current += 1
+    setSelected(null)
+    setDetail(null)
+    setDetailLoading(false)
   }, [])
 
   /** Bir ülkenin alt birim katmanını aç (lazy). */
   const enterCountry = useCallback(async (code: string) => {
+    const requestId = ++countryRequest.current
     const meta = indexByCode[code]
     setDrill(code)
     setChildLoading(true)
@@ -186,23 +201,34 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
         fetch(`/geo/admin1/${code}.json`).then((r) => (r.ok ? r.json() : null)),
         fetch(`/api/board/children?code=${code}`).then((r) => r.json()).catch(() => ({ children: {} })),
       ])
+      if (requestId !== countryRequest.current) return false
       if (topo) setChildGeo(feature(topo, topo.objects.admin1) as unknown as FeatureCollection<Geometry, TerrProps>)
       setChildBoard(children.children || {})
+      return true
     } catch {
+      if (requestId !== countryRequest.current) return false
       setToast('Could not load subdivisions.')
-    } finally { setChildLoading(false) }
+      return false
+    } finally {
+      if (requestId === countryRequest.current) setChildLoading(false)
+    }
   }, [indexByCode])
 
   const exitCountry = useCallback(() => {
+    countryRequest.current += 1
     setDrill(null)
     setChildGeo(null)
     setChildBoard({})
-    setSelected(null)
-    setDetail(null)
+    setChildLoading(false)
+    clearSelection()
     nonce.current += 1
     // Başlangıç görünümü: rotation [-14, -38] -> merkez lon 14, lat 38.
     setCamera({ lon: 14, lat: 38, scale: 350, nonce: nonce.current })
-  }, [])
+  }, [clearSelection])
+
+  const clearMapFocus = useCallback(() => {
+    if (selected || drill) exitCountry()
+  }, [drill, exitCountry, selected])
 
   const onSelect = useCallback(async (code: string, kind: 'country' | 'admin1') => {
     setSelected(code)
@@ -232,7 +258,10 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
       return
     }
     // Alt birim: önce ülkesinin katmanını aç, sonra birimi seç.
-    if (row.parentCode && row.parentCode !== drill) await enterCountry(row.parentCode)
+    if (row.parentCode && row.parentCode !== drill) {
+      const entered = await enterCountry(row.parentCode)
+      if (!entered) return
+    }
     setSelected(row.code)
     await loadDetail(row.code)
   }, [drill, enterCountry, loadDetail, onSelect])
@@ -248,15 +277,27 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
   // birlikte kapanıp kullanıcının bağlamını kaybettiriyordu).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target
+      const isEditable = target instanceof HTMLElement && (
+        target.isContentEditable ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT'
+      )
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !isEditable) {
+        e.preventDefault()
+        window.getSelection()?.removeAllRanges()
+        return
+      }
       if (e.key !== 'Escape') return
       if (stakeFor) { setStakeFor(null); return }
       if (searchOpen) { setSearchOpen(false); return }
-      if (selected) { setSelected(null); setDetail(null); return }
+      if (selected) { clearSelection(); return }
       if (drill) { exitCountry(); return }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [stakeFor, searchOpen, selected, drill, exitCountry])
+  }, [stakeFor, searchOpen, selected, drill, clearSelection, exitCountry])
 
   useEffect(() => {
     if (!toast) return
@@ -267,28 +308,39 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
   // Ödeme dönüşü: gerçek durumu sunucudan okuyoruz, query'yi kanıt saymıyoruz.
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
-    if (p.get('paid') !== '1') return
+    const intentId = p.get('payment')
+    if (!intentId) return
     const code = p.get('t')
-    setToast('Payment received — your placement is live.')
-    refreshBoard()
-    if (code) { setSelected(code); loadDetail(code) }
+    let active = true
     window.history.replaceState({}, '', window.location.pathname)
 
-    // Teklif ekranında "ülkeyi de al" işaretlenmişse, ödeme dönüşünde
-    // ülke teklifini link/mod hazır biçimde aç.
-    const pending = sessionStorage.getItem('mapstake.pendingUpsell')
-    if (pending) {
-      sessionStorage.removeItem('mapstake.pendingUpsell')
+    const confirmReturn = async () => {
       try {
-        const u = JSON.parse(pending) as { code: string; url: string; mode: 'product' | 'social' }
-        fetch(`/api/territory?code=${encodeURIComponent(u.code)}`)
-          .then((r) => r.json())
-          .then((d: Detail) => { setStakePrefill({ url: u.url, mode: u.mode }); setStakeFor(d) })
-          .catch(() => {})
-      } catch { /* bozuk kayıt: yok say */ }
+        const response = await fetch(`/api/checkout/status?intent=${encodeURIComponent(intentId)}`, {
+          cache: 'no-store',
+        })
+        const result = await response.json()
+        if (!active || !response.ok || result.status !== 'paid') return
+
+        setToast('Payment received — your placement is live.')
+        await refreshBoard()
+        if (code) { setSelected(code); await loadDetail(code) }
+
+        // Teklif ekranında "ülkeyi de al" işaretlenmişse, ödeme dönüşünde
+        // ülke teklifini link/mod hazır biçimde aç.
+        const pending = sessionStorage.getItem('mapstake.pendingUpsell')
+        if (!pending) return
+        sessionStorage.removeItem('mapstake.pendingUpsell')
+        try {
+          const u = JSON.parse(pending) as { code: string; url: string; mode: 'product' | 'social' }
+          const detail: Detail = await fetch(`/api/territory?code=${encodeURIComponent(u.code)}`).then((r) => r.json())
+          if (active) { setStakePrefill({ url: u.url, mode: u.mode }); setStakeFor(detail) }
+        } catch { /* bozuk kayıt: yok say */ }
+      } catch { /* dönüş bildirimi gösterilmez; harita sunucu gerçeğini korur */ }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    confirmReturn()
+    return () => { active = false }
+  }, [loadDetail, refreshBoard])
 
   const drillMeta = drill ? indexByCode[drill] : null
   const totals = board.totals
@@ -310,6 +362,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
           drillCode={drill}
           selectedCode={selected}
           onSelect={onSelect}
+          onClearFocus={clearMapFocus}
           cameraTarget={camera}
           priceCountryCents={PRICING.countryFloorCents}
           priceAdmin1Cents={PRICING.admin1FloorCents}
@@ -394,7 +447,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
               childBoard={childBoard}
               childLoading={childLoading}
               drill={drill}
-              onBack={() => { setSelected(null); setDetail(null) }}
+              onBack={clearSelection}
               onExitCountry={exitCountry}
               onPickChild={(code) => { setSelected(code); loadDetail(code) }}
               onStake={() => { setStakePrefill(null); setStakeFor(detail) }}
@@ -411,7 +464,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
         </aside>
 
         <div className="overlay o-bc hint" aria-hidden="true">
-          drag to spin · scroll to zoom{drill ? ' · Esc to exit' : ''}
+          drag to spin · scroll to zoom{drill || selected ? ' · click empty space or Esc to exit' : ''}
         </div>
 
         <div className="mobile-fabs">

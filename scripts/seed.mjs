@@ -32,7 +32,10 @@ function clean(u) {
   try { const x = new URL(u); x.searchParams.delete('sslmode'); return x.toString() } catch { return u }
 }
 
-const c = new pg.Client({ connectionString: clean(url), ssl: { rejectUnauthorized: false } })
+const c = new pg.Client({
+  connectionString: clean(url),
+  ssl: process.env.PGSSL_DISABLE === '1' ? undefined : { rejectUnauthorized: false },
+})
 await c.connect()
 await c.query(readFileSync(join(ROOT, 'lib', 'schema.sql'), 'utf8'))
 

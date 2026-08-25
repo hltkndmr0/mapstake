@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
  * /api/webhooks/<saglayici> gelir. applyPayment() aynı kalır.
  */
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_MOCK_PAY !== '1') {
+  if (process.env.ALLOW_MOCK_PAY !== '1') {
     return NextResponse.json({ error: 'Mock payment is disabled' }, { status: 403 })
   }
   let body: { intentId?: string; eventId?: string }

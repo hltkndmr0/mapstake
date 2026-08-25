@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS payments (
   status            TEXT    NOT NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Bir checkout yalnız bir başarılı ödeme üretebilir. Farklı webhook event ID'si
+-- ile yeniden teslim edilse bile aynı intent ikinci kez krediye dönüşmez.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_success_per_intent
+  ON payments(intent_id) WHERE status = 'succeeded';
 
 -- Append-only. İade/chargeback negatif delta olarak yazılır.
 CREATE TABLE IF NOT EXISTS stake_events (

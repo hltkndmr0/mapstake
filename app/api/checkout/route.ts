@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { computeQuote, createIntent, getTerritoryBy } from '@/lib/ranking'
-import { provider } from '@/lib/payments'
+import { cancelIntent, computeQuote, createIntent, getTerritoryBy } from '@/lib/ranking'
+import { getPaymentProvider, PaymentProviderError } from '@/lib/payments'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,10 +33,21 @@ export async function POST(req: Request) {
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
 
   // Kalıcı kayıt YALNIZ burada: önizleme istekleri veritabanına dokunmaz.
-  await createIntent(res.quote, bundleTerritoryId)
+  const provider = getPaymentProvider()
+  await createIntent(res.quote, bundleTerritoryId, provider.id)
 
   const origin = new URL(req.url).origin
-  const { redirectUrl } = await provider.createCheckout(res.quote, origin)
+  let redirectUrl: string
+  try {
+    ({ redirectUrl } = await provider.createCheckout(res.quote, origin))
+  } catch (error) {
+    await cancelIntent(res.quote.quoteId)
+    if (error instanceof PaymentProviderError) {
+      return NextResponse.json({ error: error.message }, { status: 502 })
+    }
+    console.error('Checkout creation failed', error)
+    return NextResponse.json({ error: 'Could not start checkout.' }, { status: 502 })
+  }
 
   return NextResponse.json({
     redirectUrl,

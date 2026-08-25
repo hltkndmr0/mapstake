@@ -91,7 +91,7 @@ export function floorFor(t: Territory, isTopUp: boolean): number {
 
 export type Quote = {
   quoteId: string
-  territory: { id: number; slug: string; name: string; kind: string }
+  territory: { id: number; code: string; slug: string; name: string; kind: string }
   mode: Mode
   canonicalKey: string
   displayUrl: string
@@ -170,7 +170,7 @@ export async function computeQuote(params: {
 
   const quote: Quote = {
     quoteId: randomUUID(),
-    territory: { id: t.id, slug: t.slug, name: t.name, kind: t.kind },
+    territory: { id: t.id, code: t.code, slug: t.slug, name: t.name, kind: t.kind },
     mode: n.mode,
     canonicalKey: n.canonicalKey,
     displayUrl: n.displayUrl,
@@ -193,6 +193,7 @@ export async function computeQuote(params: {
 export async function createIntent(
   quote: Quote,
   bundleTerritoryId?: number | null,
+  provider = 'mock',
 ): Promise<void> {
   await q(
     `INSERT INTO intents (id, territory_id, mode, canonical_key, display_url, outbound_url,
@@ -203,15 +204,36 @@ export async function createIntent(
       quote.quoteId, quote.territory.id, quote.mode, quote.canonicalKey,
       quote.displayUrl, quote.outboundUrl, quote.suggestedAmountCents,
       quote.existingTotalCents, quote.projectedRank, quote.expiresAt,
-      bundleTerritoryId ?? null, 'mock',
+      bundleTerritoryId ?? null, provider,
     ],
+  )
+}
+
+/** Sağlayıcı checkout'u oluşturamazsa yarım kalan intent tekrar kullanılamaz. */
+export async function cancelIntent(intentId: string): Promise<void> {
+  await q(
+    `UPDATE intents SET status = 'cancelled' WHERE id = $1 AND status = 'created'`,
+    [intentId],
+  )
+}
+
+/** Dönüş ekranı ödeme sonucunu yalnız sunucu kaydından okur. */
+export async function getIntentStatus(intentId: string): Promise<{
+  status: string; territoryCode: string; territoryName: string
+} | undefined> {
+  return q1<{ status: string; territoryCode: string; territoryName: string }>(
+    `SELECT i.status, t.code AS "territoryCode", t.name AS "territoryName"
+       FROM intents i
+       JOIN territories t ON t.id = i.territory_id
+      WHERE i.id = $1`,
+    [intentId],
   )
 }
 
 type IntentRow = {
   id: string; territory_id: number; mode: Mode; canonical_key: string
   display_url: string; outbound_url: string; amount_cents: number
-  status: string; expires_at: string; bundle_territory_id: number | null
+  status: string; provider: string; expires_at: string; bundle_territory_id: number | null
 }
 
 /**
@@ -219,11 +241,15 @@ type IntentRow = {
  * doğrulanmış webhook çağırır — asla istemci değil.
  * provider_event_id UNIQUE olduğu için aynı olay iki kez gelse de bir kez işlenir.
  */
-export async function applyPayment(intentId: string, providerEventId: string): Promise<
+export async function applyPayment(
+  intentId: string,
+  providerEventId: string,
+  confirmation?: { provider: string; amountCents: number; currency: string },
+): Promise<
   { ok: true; duplicate: boolean; territoryId: number; rank: number } | { ok: false; error: string }
 > {
   return tx(async (c) => {
-    const intent = await one<IntentRow>(c, `SELECT * FROM intents WHERE id = $1`, [intentId])
+    const intent = await one<IntentRow>(c, `SELECT * FROM intents WHERE id = $1 FOR UPDATE`, [intentId])
     if (!intent) return { ok: false as const, error: 'Checkout not found.' }
     const territoryId = Number(intent.territory_id)
 
@@ -233,6 +259,25 @@ export async function applyPayment(intentId: string, providerEventId: string): P
     )
     if (existing) {
       return { ok: true as const, duplicate: true, territoryId, rank: 0 }
+    }
+
+    // Aynı intent farklı bir sağlayıcı olayıyla ikinci kez kredilendirilemez.
+    if (intent.status === 'paid') {
+      return { ok: false as const, error: 'Checkout has already been paid.' }
+    }
+    if (intent.status !== 'created') {
+      return { ok: false as const, error: 'Checkout is not payable.' }
+    }
+    if (confirmation) {
+      if (intent.provider !== confirmation.provider) {
+        return { ok: false as const, error: 'Payment provider mismatch.' }
+      }
+      if (confirmation.currency.toLowerCase() !== 'usd') {
+        return { ok: false as const, error: 'Payment currency mismatch.' }
+      }
+      if (Number(intent.amount_cents) !== confirmation.amountCents) {
+        return { ok: false as const, error: 'Payment amount mismatch.' }
+      }
     }
 
     // Reklamveren kaydı (yoksa oluştur).

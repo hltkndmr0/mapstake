@@ -25,6 +25,7 @@ export type GlobeProps = {
   drillCode: string | null
   selectedCode: string | null
   onSelect: (code: string, kind: 'country' | 'admin1') => void
+  onClearFocus: () => void
   cameraTarget: { lon: number; lat: number; scale: number; nonce: number } | null
   /** Modal/arama açıkken true: küre yeniden çizilmez. */
   paused?: boolean
@@ -46,7 +47,7 @@ const overlaps = (a: Box, b: Box) =>
 export default function Globe(props: GlobeProps) {
   const {
     countries, subFeatures, fills, childFills, drillCode, selectedCode,
-    onSelect, cameraTarget, priceCountryCents, priceAdmin1Cents, paused = false,
+    onSelect, onClearFocus, cameraTarget, priceCountryCents, priceAdmin1Cents, paused = false,
   } = props
 
   const [rotation, setRotation] = useState<Rotation>([-14, -38, 0])
@@ -213,13 +214,18 @@ export default function Globe(props: GlobeProps) {
     drag.current = null
     setDragging(false)
     touch()
-    if (d.moved < 5 && d.code) {
-      const kind = d.kind ?? 'country'
-      if (!(inDrillRef.current && kind === 'country' && d.code !== drillCodeRef.current)) {
-        onSelect(d.code, kind)
+    if (e.type === 'pointercancel') return
+    if (d.moved < 5) {
+      if (d.code) {
+        const kind = d.kind ?? 'country'
+        if (!(inDrillRef.current && kind === 'country' && d.code !== drillCodeRef.current)) {
+          onSelect(d.code, kind)
+        }
+      } else {
+        onClearFocus()
       }
     }
-  }, [onSelect])
+  }, [onClearFocus, onSelect])
 
   useEffect(() => {
     const el = svgRef.current
@@ -414,7 +420,6 @@ export default function Globe(props: GlobeProps) {
                 opacity={inDrill && !isDrilled ? 0.4 : 1}
                 data-code={s.code}
                 data-kind="country"
-                pointerEvents={inDrill && !isDrilled ? 'none' : 'auto'}
               >
                 <title>{`${s.name} — ${f ? `${f.bidders} advertiser(s)` : 'available'}`}</title>
               </path>

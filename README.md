@@ -98,7 +98,15 @@ npm install
 
 ```bash
 DATABASE_URL="postgresql://kullanici:sifre@host:6543/postgres"
+WHOP_API_KEY="..."
+WHOP_ACCOUNT_ID="biz_..."
+WHOP_WEBHOOK_SECRET="ws_..."
 ```
+
+Whop dashboard'da `payment.succeeded` olayını
+`https://<alan-adiniz>/api/webhooks/whop` adresine gönderen bir webhook oluşturun.
+API anahtarı ve webhook secret yalnız sunucu ortamında tutulur; `NEXT_PUBLIC_`
+önekli değişkenlere yazılmaz. Yerel mock ödeme yalnız `ALLOW_MOCK_PAY=1` ile açılır.
 
 > Supabase kullanıyorsanız **transaction pooler** adresini (port **6543**) verin, doğrudan bağlantıyı (5432) değil. Serverless fonksiyonlar çok sayıda kısa ömürlü bağlantı açar; doğrudan bağlantıda Postgres'in bağlantı limiti hızla dolar.
 
@@ -149,7 +157,8 @@ app/
     board · board/children · top · territory · search · activity · stats
     quote                  fiyat hesabı (yazma yok)
     checkout               intent oluşturur + sağlayıcıya yönlendirir
-    pay                    MOCK ödeme onayı — üretimde imzalı webhook ile değişecek
+    pay                    yalnız yerel geliştirme için mock ödeme onayı
+    webhooks/whop          Whop imza, tutar ve para birimi doğrulaması
     click · icon
 components/
   Globe.tsx                D3 projeksiyon, sürükleme/zoom, etiket çakışma çözümü
@@ -185,7 +194,7 @@ Harita fare/dokunmatik dışında da kullanılabilir olmalı. `TerritorySearch` 
 
 ## Bilinen sınırlar
 
-- **Ödeme sağlayıcısı bağlı değil.** `/api/pay` yalnız `ALLOW_MOCK_PAY=1` ile çalışan bir taklittir. Üretimde silinip yerine imza doğrulayan webhook gelmelidir; `applyPayment()` aynen kalır.
+- Whop checkout'un çalışması için business hesabı, API anahtarı, account ID ve webhook secret ortam değişkenleri gerekir. `/api/pay` yalnız yerel geliştirme taklididir.
 - **Moderasyon yok.** Herkes herhangi bir bağlantı ekleyebiliyor. Şikâyet formu, gizle/engelle aksiyonları ve denetim kaydı lansman öncesi şart.
 - **Reklamveren profil sayfaları yok.** (`/brand/<link>` — planlı.)
 - Natural Earth'te 95 bölge aynı ISO kodunu paylaşıyor (Bosna'nın kantonları hep `BA-BIH`). Aynı kod aynı bölge sayılır; haritadaki tüm parçalar aynı sahibi gösterir.
