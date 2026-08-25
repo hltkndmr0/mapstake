@@ -132,14 +132,14 @@ describe('social — profil kimliği', () => {
 
 describe('withUtm', () => {
   test('kaynak etiketi eklenir', () => {
-    assert.equal(withUtm('https://ornek.com', 'mapstake'), 'https://ornek.com/?utm_source=mapstake')
+    assert.equal(withUtm('https://ornek.com', 'cartogram'), 'https://ornek.com/?utm_source=cartogram')
   })
 
   test('mevcut query korunur', () => {
-    assert.match(withUtm('https://ornek.com/?a=1', 'mapstake'), /a=1/)
+    assert.match(withUtm('https://ornek.com/?a=1', 'cartogram'), /a=1/)
   })
 
   test('bozuk URL olduğu gibi döner', () => {
-    assert.equal(withUtm('gecersiz', 'mapstake'), 'gecersiz')
+    assert.equal(withUtm('gecersiz', 'cartogram'), 'gecersiz')
   })
 })

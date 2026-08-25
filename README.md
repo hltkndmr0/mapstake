@@ -1,4 +1,4 @@
-# Mapstake
+# Cartogram
 
 Dünya haritası üzerinde reklam yerleşimi satan bir pazaryeri. Her ülke ve her il/eyalet ayrı bir reklam alanı; sıralama o bölgeye yapılan **toplam harcamaya** göre belirleniyor.
 

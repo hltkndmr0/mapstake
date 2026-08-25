@@ -62,7 +62,7 @@ export default function Rules() {
 
       <h2>Payment</h2>
       <ul>
-        <li>Payments are processed securely by Whop; Mapstake never receives or stores card details.</li>
+        <li>Payments are processed securely by Whop; Cartogram never receives or stores card details.</li>
         <li>A placement becomes live only after Whop confirms the payment to our server.</li>
         <li>Prices are shown in USD. Any taxes required for your purchase are shown at checkout.</li>
         <li>For payment or refund questions, contact <a href={`mailto:${BRAND.contactEmail}`}>{BRAND.contactEmail}</a>.</li>

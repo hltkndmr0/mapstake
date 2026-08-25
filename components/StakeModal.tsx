@@ -142,7 +142,7 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
       const data = await r.json()
       if (!r.ok) { setError(data.error || 'Could not start checkout.'); return }
 
-      sessionStorage.removeItem('mapstake.pendingUpsell')
+      sessionStorage.removeItem(`${BRAND.slug}.pendingUpsell`)
       window.location.assign(data.redirectUrl)
     } catch {
       setError('Could not start checkout.')

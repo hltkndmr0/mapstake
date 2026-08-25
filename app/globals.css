@@ -878,3 +878,6 @@ body:has(.doc) { overflow: auto; }
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
+
+/* Logo tek flex öğesi olmalı: .brand'in gap'i kelimeyi ikiye bölüyordu. */
+.brand .wordmark { display: inline; white-space: nowrap; }

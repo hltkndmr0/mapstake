@@ -1,15 +1,28 @@
 // Tüm marka metinleri tek yerde. Adı/sloganı değiştirmek isterseniz
 // yalnızca bu dosyayı düzenlemeniz yeterli.
 export const BRAND = {
-  name: 'Mapstake',
-  domain: 'mapstake.app',
+  name: 'Cartogram',
+  domain: 'cartogram.lol',
+  /**
+   * Makine tarafında kullanılan kısa ad: utm etiketi ve tarayıcı depolama
+   * anahtarları. Eskiden 'mapstake' beş ayrı dosyaya elle yazılmıştı;
+   * yeniden adlandırırken birkaçı geride kalıyordu.
+   */
+  slug: 'cartogram',
+  /**
+   * Logo tek kelime olarak yazılır, ikinci parça vurgu renginde.
+   * Tek bir <span> içinde durmaları şart: .brand bir flex konteyner ve
+   * gap'i var — ayrı çocuklar olurlarsa araya boşluk girip kelime
+   * "Carto gram" diye ikiye ayrılıyor.
+   */
+  wordmark: { head: 'Carto', tail: 'gram' },
   tagline: 'Buy the world, one region at a time.',
   pitch: 'Every country and every state is an ad slot. Your rank is your total spend.',
   // Ürünün hukuki niteliği. Bu ifadeleri silmeyin: ürünün bahis/şans oyunu
   // olmadığını her yüzeyde açıkça belirtmek bilinçli bir sigortadır.
   legalNote: 'This is an ad placement purchase — not a bet, prize or game of chance.',
   adDisclosure: 'Sponsored listings submitted by users.',
-  contactEmail: 'support@mapstake.app',
+  contactEmail: 'support@cartogram.lol',
 } as const
 
 // Fiyat politikası — tek kaynak. Arayüz metni, quote ve doğrulama

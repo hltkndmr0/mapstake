@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const metadataAmount = typeof metadata?.expected_amount_cents === 'string'
     ? Number(metadata.expected_amount_cents)
     : NaN
-  // Whop total'e vergi ekleyebilir; Mapstake yerleşim bedeli vergi öncesi
+  // Whop total'e vergi ekleyebilir; Cartogram yerleşim bedeli vergi öncesi
   // subtotal'dır. Promo kodları kapalı olduğu için subtotal intent ile eşleşir.
   const amountCents = Math.round((event.data.subtotal ?? event.data.total) * 100)
 

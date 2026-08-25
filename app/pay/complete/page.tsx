@@ -29,7 +29,7 @@ export default async function PaymentCompletePage({ searchParams }: {
         <p className="lead" role="alert">This payment return link is incomplete.</p>
       )}
       <p className="note" style={{ marginTop: 20 }}>
-        Returning from checkout is not treated as proof of payment. Mapstake activates the
+        Returning from checkout is not treated as proof of payment. Cartogram activates the
         placement only after Whop&apos;s signature-verified webhook reaches our server.
       </p>
     </main>

@@ -107,14 +107,14 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
   useEffect(() => {
     if (!compact) return
     try {
-      if (localStorage.getItem('mapstake.introSeen') === '1') return
+      if (localStorage.getItem(`${BRAND.slug}.introSeen`) === '1') return
     } catch { /* private mode: her açılışta göstermektense hiç gösterme */ return }
     setIntroOpen(true)
   }, [compact])
 
   const closeIntro = useCallback(() => {
     setIntroOpen(false)
-    try { localStorage.setItem('mapstake.introSeen', '1') } catch { /* yok say */ }
+    try { localStorage.setItem(`${BRAND.slug}.introSeen`, '1') } catch { /* yok say */ }
   }, [])
 
   // Panel yüksekliğini izle: açılma/kapanma ve içerik değişimi kürenin
@@ -395,9 +395,9 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
 
         // Teklif ekranında "ülkeyi de al" işaretlenmişse, ödeme dönüşünde
         // ülke teklifini link/mod hazır biçimde aç.
-        const pending = sessionStorage.getItem('mapstake.pendingUpsell')
+        const pending = sessionStorage.getItem(`${BRAND.slug}.pendingUpsell`)
         if (!pending) return
-        sessionStorage.removeItem('mapstake.pendingUpsell')
+        sessionStorage.removeItem(`${BRAND.slug}.pendingUpsell`)
         try {
           const u = JSON.parse(pending) as { code: string; url: string; mode: 'product' | 'social' }
           const detail: Detail = await fetch(`/api/territory?code=${encodeURIComponent(u.code)}`).then((r) => r.json())
@@ -441,7 +441,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
           <div className="brand-row">
             <a className="brand" href="/">
               <span className="dot" aria-hidden="true" />
-              Map<em>stake</em>
+              <span className="wordmark">{BRAND.wordmark.head}<em>{BRAND.wordmark.tail}</em></span>
             </a>
             <button className="icon-btn help-btn" onClick={() => setIntroOpen(true)}
               aria-label="What is this?" title="What is this?">?</button>
@@ -897,7 +897,7 @@ function VisitLink({ url, advertiserKey, territoryCode }: {
   return (
     <a
       className="visit"
-      href={`${url}${url.includes('?') ? '&' : '?'}utm_source=mapstake`}
+      href={`${url}${url.includes('?') ? '&' : '?'}utm_source=${BRAND.slug}`}
       target="_blank"
       rel="sponsored ugc nofollow noopener noreferrer"
       onClick={() => {
