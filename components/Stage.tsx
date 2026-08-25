@@ -7,6 +7,7 @@ import Globe, { type Fill, type TerrProps } from './Globe'
 import StakeModal from './StakeModal'
 import TerritorySearch from './TerritorySearch'
 import { BRAND, PRICING, formatMoney } from '@/lib/brand'
+import { relTime } from '@/lib/time'
 
 export type BoardEntry = {
   code: string; slug: string; name: string; bidders: number; totalCents: number
@@ -79,13 +80,54 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
   // Mobilde alt panel açılır-kapanır; kapalıyken küre tüm ekranı kullanır.
   // İlk açılışta dar ekranda kapalı başlar ki küre ortada tam görünsün.
   const [sheetOpen, setSheetOpen] = useState(true)
+  // Mobilde alt panel kürenin üstünü kapatıyor; kürenin görünür alanı
+  // panelin yüksekliği kadar kısaltılır ki seçilen bölge panelin ARKASINDA
+  // kalmasın. Panel yüksekliği içeriğe göre değiştiği için ölçülüyor.
+  const [compact, setCompact] = useState(false)
+  const [sheetInset, setSheetInset] = useState(0)
+  const [introOpen, setIntroOpen] = useState(false)
+  const sheetRef = useRef<HTMLElement>(null)
   const nonce = useRef(0)
   const detailRequest = useRef(0)
   const countryRequest = useRef(0)
+  const deepLinked = useRef(false)
 
   useEffect(() => {
-    if (window.matchMedia('(max-width: 900px), (max-height: 640px)').matches) setSheetOpen(false)
+    const mq = window.matchMedia('(max-width: 900px), (max-height: 640px)')
+    if (mq.matches) setSheetOpen(false)
+    const sync = () => setCompact(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
   }, [])
+
+  // Mobilde ürünün ne olduğunu anlatan tek yüzey .hero kartıydı ve o kart
+  // dar ekranda gizleniyor: telefondan gelen ziyaretçi hiçbir açıklama
+  // görmüyordu. İlk ziyarette kısa bir tanıtım açıyoruz.
+  useEffect(() => {
+    if (!compact) return
+    try {
+      if (localStorage.getItem('mapstake.introSeen') === '1') return
+    } catch { /* private mode: her açılışta göstermektense hiç gösterme */ return }
+    setIntroOpen(true)
+  }, [compact])
+
+  const closeIntro = useCallback(() => {
+    setIntroOpen(false)
+    try { localStorage.setItem('mapstake.introSeen', '1') } catch { /* yok say */ }
+  }, [])
+
+  // Panel yüksekliğini izle: açılma/kapanma ve içerik değişimi kürenin
+  // görünür alanını anında güncellemeli.
+  useEffect(() => {
+    const el = sheetRef.current
+    if (!el || !compact) { setSheetInset(0); return }
+    const ro = new ResizeObserver(([entry]) => {
+      setSheetInset(Math.round(entry.contentRect.height))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [compact])
 
   // ---------------------------------------------------------- ilk yükleme
   useEffect(() => {
@@ -266,6 +308,31 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     await loadDetail(row.code)
   }, [drill, enterCountry, loadDetail, onSelect])
 
+  /**
+   * Paylaşılan /t/<code> bağlantısıyla gelen ziyaretçi doğrudan o bölgeye açılır.
+   * indexByCode dolmadan çalışırsa kamera hedefi bulunamaz, o yüzden bekliyoruz.
+   */
+  useEffect(() => {
+    if (deepLinked.current || index.length === 0) return
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('payment')) return // ödeme dönüşü ayrı akış
+    const code = p.get('t')
+    if (!code) return
+    deepLinked.current = true
+    window.history.replaceState({}, '', window.location.pathname)
+    void (async () => {
+      try {
+        const d: Detail = await fetch(`/api/territory?code=${encodeURIComponent(code)}`).then((r) => r.json())
+        if (!d?.territory) return
+        await selectFromSearch({
+          code: d.territory.code,
+          kind: d.territory.kind,
+          parentCode: d.territory.parent?.code ?? null,
+        })
+      } catch { /* bozuk bağlantı: harita normal açılır */ }
+    })()
+  }, [index.length, selectFromSearch])
+
   /** "Ülkenin tamamını da al" — il panelinden ülke teklifine geçiş. */
   const claimParent = useCallback(async (code: string) => {
     const d: Detail = await fetch(`/api/territory?code=${encodeURIComponent(code)}`).then((r) => r.json())
@@ -349,7 +416,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     <>
       <a className="skip-link" href="#territory-search">Skip to territory search</a>
 
-      <div className="stage">
+      <div className="stage" style={{ '--sheet-inset': `${sheetInset}px` } as React.CSSProperties}>
         {/* Kürenin arkasındaki yıldız alanı (saf CSS, iki parallax katmanı). */}
         <div className="stars" aria-hidden="true" />
         <div className="stars-2" aria-hidden="true" />
@@ -371,10 +438,14 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
 
         {/* --------------------------------------------------------- sol üst */}
         <header className="overlay o-tl">
-          <a className="brand" href="/">
-            <span className="dot" aria-hidden="true" />
-            Map<em>stake</em>
-          </a>
+          <div className="brand-row">
+            <a className="brand" href="/">
+              <span className="dot" aria-hidden="true" />
+              Map<em>stake</em>
+            </a>
+            <button className="icon-btn help-btn" onClick={() => setIntroOpen(true)}
+              aria-label="What is this?" title="What is this?">?</button>
+          </div>
           <div className="card hero">
             <span className="kicker">Ad inventory · {totals.activeTerritories} slots taken</span>
             <h1>{BRAND.tagline}</h1>
@@ -428,6 +499,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
 
         {/* --------------------------------------------------------- sağ alt */}
         <aside
+          ref={sheetRef}
           className={`overlay o-br card panel${sheetOpen ? '' : ' collapsed'}`}
           aria-label="Territory panel"
         >
@@ -451,6 +523,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
               onExitCountry={exitCountry}
               onPickChild={(code) => { setSelected(code); loadDetail(code) }}
               onStake={() => { setStakePrefill(null); setStakeFor(detail) }}
+              onToast={setToast}
               onClaimParent={claimParent}
             />
           ) : (
@@ -464,13 +537,20 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
         </aside>
 
         <div className="overlay o-bc hint" aria-hidden="true">
-          drag to spin · scroll to zoom{drill || selected ? ' · click empty space or Esc to exit' : ''}
+          drag to spin · scroll to zoom{drill || selected ? ' · click another country, empty space or Esc to exit' : ''}
         </div>
 
         <div className="mobile-fabs">
           <button className="btn btn-primary btn-sm" onClick={() => setSearchOpen(true)}>Buy a slot</button>
         </div>
       </div>
+
+      {introOpen && (
+        <IntroSheet
+          onClose={closeIntro}
+          onSearch={() => { closeIntro(); setSearchOpen(true) }}
+        />
+      )}
 
       {searchOpen && (
         <TerritorySearch
@@ -560,13 +640,108 @@ function TopSpenders({ top, drillName, onExitCountry, onOpenSearch }: {
   )
 }
 
-function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBack, onExitCountry, onPickChild, onStake, onClaimParent }: {
+/**
+ * Paylaşım döngüsünün girişi: "Türkiye'de #1 benim" ekran görüntüsü yerine
+ * OG kartı üreten gerçek bir bağlantı. Mobilde yerel paylaşım sayfası açılır,
+ * masaüstünde bağlantı panoya kopyalanır.
+ */
+/**
+ * Mobil tanıtım. Masaüstündeki .hero kartının anlattığı şeyi telefonda da
+ * anlatır: burası ne, nasıl çalışır, ne kadar. İlk ziyaretten sonra yalnız
+ * başlıktaki "?" düğmesiyle açılır.
+ */
+function IntroSheet({ onClose, onSearch }: { onClose: () => void; onSearch: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal intro-modal" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+        <div className="modal-head">
+          <span className="kicker">Ad inventory</span>
+          <h2 id="intro-title">{BRAND.tagline}</h2>
+          <p className="intro-pitch">{BRAND.pitch}</p>
+        </div>
+
+        <div className="modal-body">
+          <ol className="intro-steps">
+            <li><strong>Tap a country</strong> to open its states and provinces.</li>
+            <li><strong>Pick a slot</strong> and submit your link — no account needed.</li>
+            <li><strong>Highest total spend</strong> shows on the map as #1.</li>
+          </ol>
+
+          <div className="inv intro-inv">
+            <span className="inv-row">
+              <span className="inv-dot country" aria-hidden="true" />
+              <strong>241 countries</strong> from {formatMoney(PRICING.countryFloorCents)}
+            </span>
+            <span className="inv-row">
+              <span className="inv-dot state" aria-hidden="true" />
+              <strong>4,549 states &amp; provinces</strong> from {formatMoney(PRICING.admin1FloorCents)}
+            </span>
+          </div>
+
+          <p className="intro-note">{BRAND.legalNote}</p>
+        </div>
+
+        <div className="modal-foot" style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={onSearch}>
+            Buy a slot · from {formatMoney(PRICING.admin1FloorCents)}
+          </button>
+          <button className="btn btn-ghost" onClick={onClose}>Explore</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ShareButton({ code, name, onToast }: {
+  code: string; name: string; onToast: (message: string) => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const share = async () => {
+    if (busy) return
+    setBusy(true)
+    const url = `${window.location.origin}/t/${encodeURIComponent(code)}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${name} — ${BRAND.name}`, url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        onToast('Link copied.')
+      }
+    } catch (err) {
+      // Kullanıcı paylaşım sayfasını kapattıysa hata gösterilmez.
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        onToast('Could not share this link.')
+      }
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <button className="icon-btn share-btn" onClick={share} disabled={busy}
+      aria-label={`Share ${name}`} title="Share this territory">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+        <line x1="8.6" y1="10.5" x2="15.4" y2="6.5" /><line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
+      </svg>
+    </button>
+  )
+}
+
+function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBack, onExitCountry, onPickChild, onStake, onClaimParent, onToast }: {
   detail: Detail; loading: boolean
   childBoard: Record<string, BoardEntry>; childLoading: boolean
   drill: string | null
   onBack: () => void; onExitCountry: () => void
   onPickChild: (code: string) => void; onStake: () => void
   onClaimParent: (code: string) => void
+  onToast: (message: string) => void
 }) {
   const t = detail.territory
   const isEmpty = detail.placements.length === 0
@@ -584,7 +759,10 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBa
           {isEmpty ? 'Available' : `${detail.placements.length} advertisers competing`}
           {t.kind === 'admin1' && <span className="chip sub">{t.subtype || 'State'}</span>}
         </div>
-        <h2 className="panel-title">{t.name}</h2>
+        <div className="panel-title-row">
+          <h2 className="panel-title">{t.name}</h2>
+          <ShareButton code={t.code} name={t.name} onToast={onToast} />
+        </div>
         {detail.children && (
           <p className="panel-sub">
             {detail.children.filled}/{detail.children.total} states sold
@@ -733,13 +911,3 @@ function VisitLink({ url, advertiserKey, territoryCode }: {
   )
 }
 
-function relTime(iso: string): string {
-  const then = new Date(iso.replace(' ', 'T') + 'Z').getTime()
-  const diff = Math.max(0, Date.now() - then)
-  const m = Math.floor(diff / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
-}

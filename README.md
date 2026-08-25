@@ -80,6 +80,17 @@ gereken_ödeme = max(taban, hedef_toplam + 1$ − mevcut_toplamın)
 
 "Total spend" `payments` tablosundan sayılır, yerleşim toplamlarından değil. Paket alımda tek ödeme iki bölgeye kredi olarak işlendiği için yerleşimleri toplamak rakamı şişirirdi. Paket kredisi `stake_events.bundled = TRUE` ile nakitten ayrışır.
 
+### Paylaşım kartı sunucuda üretilir
+
+Her bölgenin `/t/<kod>` adresinde kendi sayfası var ve OG görseli `next/og` ile
+o anki sıralamadan üretiliyor. Sayfa ile görsel **aynı sorguyu** (`data.ts`)
+kullanır: crawler görseli ayrı bir istekte çeker, iki kaynak olsaydı kart ile
+sayfa farklı sıralama gösterebilir ve paylaşım yanlış bilgi taşırdı.
+
+`metadataBase` sırayla `NEXT_PUBLIC_SITE_URL` → Vercel production adresi →
+`BRAND.domain` olarak çözülür. OG görselleri mutlak URL yayınlandığı için
+çözümlenmeyen bir domaine işaret etmesi kartı sessizce boş bırakır.
+
 ### Coğrafi veri build-time'da
 
 Natural Earth verisi indirilip sadeleştirilir, ülke başına ayrı TopoJSON dosyasına bölünür ve kendi origin'imizden sunulur. İstemci yalnız içine girdiği ülkenin dosyasını indirir (8–44 KB); 4.454 poligon asla tek seferde gitmez.
@@ -131,6 +142,7 @@ Kısayol: `npm run setup` üçünü sırayla çalıştırır.
 | `npm run dev` | Geliştirme sunucusu |
 | `npm run build` | Üretim derlemesi |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Birim testleri (`node --test`, tsx ile) |
 
 ---
 
@@ -153,6 +165,7 @@ app/
   page.tsx                 ana sahne (board sunucuda hazırlanır → "0 / $0" yanıp sönmesi yok)
   rules/  about/           kural ve sorumluluk metinleri
   pay/mock/                geçici ödeme ekranı — sağlayıcı bağlanınca silinecek
+  t/[code]/                paylaşılabilir bölge sayfası + OG/Twitter kartı
   api/
     board · board/children · top · territory · search · activity · stats
     quote                  fiyat hesabı (yazma yok)
@@ -175,6 +188,8 @@ lib/
   brand.ts                 marka metinleri + fiyat politikası (tek kaynak)
 scripts/
   build-geo.mjs · migrate.mjs · seed.mjs
+tests/
+  pricing · normalize · whop-webhook · time
 ```
 
 ---
@@ -197,6 +212,9 @@ Harita fare/dokunmatik dışında da kullanılabilir olmalı. `TerritorySearch` 
 - Whop checkout'un çalışması için business hesabı, API anahtarı, account ID ve webhook secret ortam değişkenleri gerekir. `/api/pay` yalnız yerel geliştirme taklididir.
 - **Moderasyon yok.** Herkes herhangi bir bağlantı ekleyebiliyor. Şikâyet formu, gizle/engelle aksiyonları ve denetim kaydı lansman öncesi şart.
 - **Reklamveren profil sayfaları yok.** (`/brand/<link>` — planlı.)
+- **Testler yalnız saf fonksiyonları kapsıyor.** Fiyat matematiği, link
+  normalizasyonu, webhook imzası ve zaman etiketi test altında; veritabanına
+  dokunan `applyPayment`/`computeQuote` için test veritabanı gerekiyor.
 - Natural Earth'te 95 bölge aynı ISO kodunu paylaşıyor (Bosna'nın kantonları hep `BA-BIH`). Aynı kod aynı bölge sayılır; haritadaki tüm parçalar aynı sahibi gösterir.
 
 ## Veri ve hukuk

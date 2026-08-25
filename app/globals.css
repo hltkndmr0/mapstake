@@ -133,13 +133,28 @@ a { color: inherit; }
   .stars, .stars-2 { animation: none; }
 }
 
-.globe-wrap { position: absolute; inset: 0; z-index: 1; }
+.globe-wrap {
+  position: absolute; inset: 0; z-index: 1;
+  /* Küreyi parmakla sürüklerken fiyat etiketleri ($5, $2) ve marka rozetleri
+     metin olarak seçiliyordu: sürükleme mavi vurgu bırakıyordu. Tek tek
+     etiket sınıfı kovalamak yerine kürenin tamamı seçilemez; içerideki her
+     yeni etiket türü de kendiliğinden kapsanır. -webkit-touch-callout iOS'ta
+     basılı tutunca çıkan "Kopyala/Paylaş" menüsünü engeller. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
 .globe-wrap svg { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .globe-wrap svg.dragging { cursor: grabbing; }
 
 .terr { transition: fill 0.18s ease; }
 .terr.clickable { cursor: pointer; }
 .terr.clickable:hover { filter: brightness(1.07) saturate(1.1); }
+/* Odaktaki ülkenin dışındakiler soluk çizilir ama tıklanabilir: üzerine
+   gelince belirginleşir ki "buraya basınca oraya geçerim" anlaşılsın.
+   CSS opacity, inline sunum özniteliğini ezer. */
+.terr.terr-bg:hover { opacity: 0.72; }
 .terr:focus { outline: none; }
 .terr:focus-visible { stroke: var(--accent); stroke-width: 2.5; paint-order: stroke; }
 
@@ -626,6 +641,10 @@ a { color: inherit; }
   .stars, .stars-2 { animation: none; inset: 0; }
   .stars-2 { display: none; }
 
+  /* Kürenin görünür alanı alt panelin üstünde kalan bölge. Bu olmadan
+     seçilen ülke tam ortaya alınıyor, orta da panelin arkasına düşüyordu. */
+  .globe-wrap { bottom: var(--sheet-inset, 0px); transition: bottom 0.28s ease; }
+
   .hero { display: none; }
   .o-bl.activity-slot { display: none; }
   .o-bc { display: none; }
@@ -765,3 +784,97 @@ body:has(.doc) { overflow: auto; }
 }
 .doc .back:hover { color: var(--accent); }
 .doc a { color: var(--accent); }
+
+/* --------------------------------------------- paylaşılabilir bölge sayfası */
+/* .doc a rengi buton sınıflarını eziyordu: sarı zemin üzerinde sarı yazı. */
+.doc a.btn-primary { color: #17202f; }
+.doc a.btn-ghost { color: var(--ink); }
+/* Kicker inline-flex; .doc içinde geri linkinin yanına yapışmasın. */
+.doc .kicker { display: flex; }
+
+.rank-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0 10px;
+  font-size: 14.5px;
+}
+.rank-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-dim);
+  font-weight: 600;
+  padding: 0 12px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rank-table td {
+  padding: 11px 12px 11px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+}
+.rank-table td:first-child { width: 34px; color: var(--muted-dim); font-variant-numeric: tabular-nums; }
+.rank-table td:last-child { text-align: right; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rank-table tbody tr:first-child td:last-child { color: var(--accent); }
+.rank-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  margin-right: 9px;
+  vertical-align: middle;
+}
+
+.panel-title-row { display: flex; align-items: flex-start; gap: 10px; }
+.panel-title-row .panel-title { flex: 1; min-width: 0; }
+.share-btn { flex: none; margin-top: 2px; }
+
+/* ------------------------------------------------------------ mobil tanıtım */
+.brand-row { display: flex; align-items: center; gap: 8px; }
+/* Masaüstünde .hero zaten anlatıyor; "?" yalnız dar ekranda gerekli. */
+.help-btn { display: none; }
+/* .modal-head varsayılanı satır düzeni (başlık + kapat düğmesi); tanıtımda
+   başlık, kicker ve pitch alt alta akmalı. */
+.intro-modal .modal-head { display: block; }
+.intro-modal .modal-head h2 { font-size: 22px; margin: 8px 0 0; line-height: 1.25; }
+.intro-pitch { margin: 9px 0 0; font-size: 14px; line-height: 1.6; color: var(--muted); }
+.intro-steps {
+  list-style: none; counter-reset: step; margin: 0 0 18px; padding: 0;
+}
+.intro-steps li {
+  counter-increment: step; position: relative;
+  padding-left: 34px; margin-bottom: 13px;
+  font-size: 14px; line-height: 1.55; color: var(--muted);
+}
+.intro-steps li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: -1px;
+  display: flex; align-items: center; justify-content: center;
+  width: 23px; height: 23px; border-radius: 7px;
+  background: rgba(255, 201, 60, 0.14); color: var(--accent);
+  font-size: 12px; font-weight: 800;
+}
+.intro-steps strong { color: var(--ink); }
+.intro-inv {
+  padding: 13px 14px; border: 1px solid var(--line);
+  border-radius: var(--r-md); background: rgba(255, 255, 255, 0.03);
+}
+.intro-note { margin: 14px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--muted-dim); }
+
+@media (max-width: 900px), (max-height: 640px) {
+  .help-btn {
+    display: flex; flex: none;
+    width: 34px; height: 34px; border-radius: 50%;
+    font-size: 15px; font-weight: 800;
+  }
+}
+
+/* ---------------------------------------------------- dokunma konforu (mobil)
+   Telefonda butona basılı tutmak yazıyı seçiyor ve mavi vurgu bırakıyordu;
+   ikisi de dokunmayı "tıklamadı mı?" hissine sokuyor. touch-action da
+   çift dokunma zoom'u yüzünden gelen ~300 ms gecikmeyi kaldırır. */
+.btn, .icon-btn, .sheet-toggle, .crumbs button, .tab, .rank-row {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}

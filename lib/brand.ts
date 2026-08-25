@@ -27,3 +27,19 @@ export function formatMoney(cents: number): string {
   const dollars = cents / 100
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`
 }
+
+/**
+ * Mutlak URL üretimi için sitenin kökü.
+ *
+ * metadataBase burada kritik: OG görselleri mutlak URL olarak yayınlanır ve
+ * çözümlenmeyen bir domaine işaret ederse paylaşım önizlemesi boş çıkar.
+ * BRAND.domain henüz yayında olmadığı için sıra şu: açık ayar -> Vercel'in
+ * ürettiği production adresi -> marka domaini.
+ */
+export function siteUrl(): string {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL
+  if (explicit) return explicit.replace(/\/+$/, '')
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  if (vercel) return `https://${vercel}`
+  return `https://${BRAND.domain}`
+}

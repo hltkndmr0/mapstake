@@ -218,7 +218,14 @@ export default function Globe(props: GlobeProps) {
     if (d.moved < 5) {
       if (d.code) {
         const kind = d.kind ?? 'country'
-        if (!(inDrillRef.current && kind === 'country' && d.code !== drillCodeRef.current)) {
+        // Bir ülkenin içindeyken BAŞKA bir ülkeye tıklamak odaktan çıkarır ve
+        // dünya görünümüne döner. Eskiden hiçbir şey yapmıyordu; odaktan
+        // çıkmanın tek yolu okyanusa basmaktı. Doğrudan o ülkeye geçmek de
+        // denendi ama kullanıcı ülkeden ülkeye zıplayıp dünyaya hiç
+        // dönemiyordu — çıkış her zaman bir üst seviyeye olmalı.
+        if (inDrillRef.current && kind === 'country' && d.code !== drillCodeRef.current) {
+          onClearFocus()
+        } else {
           onSelect(d.code, kind)
         }
       } else {
@@ -413,7 +420,7 @@ export default function Globe(props: GlobeProps) {
               <path
                 key={s.code}
                 d={s.d}
-                className={`terr ${!inDrill ? 'clickable' : ''}`}
+                className={`terr clickable${inDrill && !isDrilled ? ' terr-bg' : ''}`}
                 fill={isDrilled && inDrill ? '#eef3f8' : f?.color || 'var(--land)'}
                 stroke={f ? '#ffffff' : 'var(--land-stroke)'}
                 strokeWidth={f ? 1.1 : 0.55}
