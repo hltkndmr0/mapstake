@@ -12,7 +12,9 @@
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
     "migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts tests/db/*.test.ts",
+    "test:db": "tsx --test --test-concurrency=1 tests/db/*.test.ts",
+    "moderate": "node --env-file-if-exists=.env.local --import tsx scripts/moderate.ts"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",

@@ -8,6 +8,7 @@ import StakeModal from './StakeModal'
 import TerritorySearch from './TerritorySearch'
 import CategoryBar from './CategoryBar'
 import Flag from './Flag'
+import ReportModal, { type ReportTarget } from './ReportModal'
 import { BRAND, PRICING, formatMoney } from '@/lib/brand'
 import type { Category } from '@/lib/categories'
 import { flagAccent } from '@/lib/flagColor'
@@ -107,6 +108,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
   const [stakeFor, setStakeFor] = useState<Detail | null>(null)
   const [stakePrefill, setStakePrefill] = useState<{ url: string; mode: 'product' | 'social' } | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [reportFor, setReportFor] = useState<ReportTarget | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   // Mobilde alt panel açılır-kapanır; kapalıyken küre tüm ekranı kullanır.
   // İlk açılışta dar ekranda kapalı başlar ki küre ortada tam görünsün.
@@ -474,6 +476,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
         return
       }
       if (e.key !== 'Escape') return
+      if (reportFor) { setReportFor(null); return }
       if (stakeFor) { setStakeFor(null); return }
       if (searchOpen) { setSearchOpen(false); return }
       if (selected) { clearSelection(); return }
@@ -481,7 +484,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [stakeFor, searchOpen, selected, drill, clearSelection, exitCountry])
+  }, [reportFor, stakeFor, searchOpen, selected, drill, clearSelection, exitCountry])
 
   useEffect(() => {
     if (!toast) return
@@ -550,7 +553,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
           cameraTarget={camera}
           priceCountryCents={PRICING.countryFloorCents}
           priceAdmin1Cents={PRICING.admin1FloorCents}
-          paused={!!stakeFor || searchOpen}
+          paused={!!stakeFor || !!reportFor || searchOpen}
           flagsOn={flagsOn}
           accent={accent}
         />
@@ -674,6 +677,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
               onExitCountry={exitCountry}
               onPickChild={(code) => { setSelected(code); loadDetail(code) }}
               onStake={() => { setStakePrefill(null); setStakeFor(detail) }}
+              onReport={setReportFor}
               onToast={setToast}
               onClaimParent={claimParent}
             />
@@ -712,6 +716,15 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
           board={board.countries}
           onClose={() => setSearchOpen(false)}
           onPick={selectFromSearch}
+        />
+      )}
+
+      {reportFor && (
+        <ReportModal
+          target={reportFor}
+          categories={board.categories}
+          onClose={() => setReportFor(null)}
+          onDone={(message) => { setReportFor(null); setToast(message) }}
         />
       )}
 
@@ -802,7 +815,12 @@ function TopSpenders({ top, drillName, drillCode, category, categories, onExitCo
                     </span>
                   </span>
                   <span className="rank-amt">{formatMoney(r.total_cents)}</span>
-                  <VisitLink url={r.outbound_url} advertiserKey={r.key} territoryCode={r.territory_code} />
+                  <VisitLink
+                    url={r.outbound_url}
+                    advertiserKey={r.key}
+                    territoryCode={r.territory_code}
+                    category={r.category}
+                  />
                 </div>
               </li>
             ))}
@@ -916,7 +934,7 @@ function ShareButton({ code, name, category, onToast }: {
   )
 }
 
-function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, category, accent, onPickCategory, onBack, onExitCountry, onPickChild, onStake, onClaimParent, onToast }: {
+function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, category, accent, onPickCategory, onBack, onExitCountry, onPickChild, onStake, onClaimParent, onReport, onToast }: {
   detail: Detail; loading: boolean
   childBoard: Record<string, BoardEntry>; childLoading: boolean
   drill: string | null
@@ -926,6 +944,7 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, cate
   onBack: () => void; onExitCountry: () => void
   onPickChild: (code: string) => void; onStake: () => void
   onClaimParent: (code: string) => void
+  onReport: (target: ReportTarget) => void
   onToast: (message: string) => void
 }) {
   const t = detail.territory
@@ -1002,7 +1021,25 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, cate
                     </span>
                   </span>
                   <span className="rank-amt">{formatMoney(p.totalCents)}</span>
-                  <VisitLink url={p.outboundUrl} advertiserKey={p.key} territoryCode={t.code} />
+                  <VisitLink
+                    url={p.outboundUrl}
+                    advertiserKey={p.key}
+                    territoryCode={t.code}
+                    category={p.category}
+                  />
+                  {/* Kategoriyi reklamverenin kendisi seçiyor; yanlış seçimi
+                      görebilecek tek kişi bu listeye bakan ziyaretçi. */}
+                  <button
+                    className="icon-btn flag-btn"
+                    onClick={() => onReport({
+                      territoryCode: t.code, territoryName: t.name,
+                      advertiserKey: p.key, displayUrl: p.displayUrl, category: p.category,
+                    })}
+                    aria-label={`Report ${p.displayUrl} as wrong category`}
+                    title="Wrong category?"
+                  >
+                    ⚑
+                  </button>
                 </div>
               </li>
             ))}
@@ -1129,8 +1166,10 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, cate
  *   arama motorlarına açıkça bildirir (orijinal üründe eksikti).
  * - Tık sendBeacon ile sayılır: sekme kapansa bile istek tamamlanır.
  */
-function VisitLink({ url, advertiserKey, territoryCode }: {
+function VisitLink({ url, advertiserKey, territoryCode, category }: {
   url: string; advertiserKey: string; territoryCode: string
+  /** Hangi yarıştan tıklandığı; sayaç kategori bazında tutuluyor. */
+  category?: string
 }) {
   return (
     <a
@@ -1139,7 +1178,7 @@ function VisitLink({ url, advertiserKey, territoryCode }: {
       target="_blank"
       rel="sponsored ugc nofollow noopener noreferrer"
       onClick={() => {
-        const body = JSON.stringify({ key: advertiserKey, code: territoryCode })
+        const body = JSON.stringify({ key: advertiserKey, code: territoryCode, category })
         navigator.sendBeacon?.('/api/click', new Blob([body], { type: 'application/json' }))
       }}
       title={`Visit ${advertiserKey}`}

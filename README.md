@@ -164,6 +164,32 @@ kovalarının en kalabalığı kazanır. Ortalama alınsaydı kırmızı-beyaz b
 pembeye düşerdi. 238 ülke için elle renk tablosu tutmak hem baştan yanlış hem
 bakımsız kalırdı.
 
+### Moderasyon sonradan işler, satın alma anında değil
+
+Kategoriyi reklamverenin kendisi seçiyor ve bu kötüye kullanılabilir bir
+serbestlik: kalabalık bir yarıştan kaçıp boş bir kategoride #1 görünmek ucuz
+bir oyun. Satın alma anında engellemenin güvenilir bir yolu yok — bir alan
+adının hangi sektöre ait olduğunu makine kesin bilemez ve yanlış pozitif
+doğrudan kayıp satış demek.
+
+Döngü bu yüzden sonradan işliyor: **ziyaretçi bildirir → operatör taşır ya da
+gizler → her işlem `moderation_log`'a yazılır.** Bildirim hiçbir şeyi
+otomatik değiştirmez; otomatik taşıma, rakibi listeden düşürmek için
+silah olurdu.
+
+Taşıma para tablolarına dokunmaz. Marka hedef kategoride zaten yarışıyorsa
+iki satır **birleştirilir** — yeni satır açmak `(bölge, reklamveren, kategori)`
+tekilliğini bozar, taşımayı reddetmek yanlış kategoriyi yerinde bırakırdı.
+Birleşmede stake olayları hedefe taşınır, yoksa ödeme kaydı ile yerleşim
+toplamı ayrışır ve nakit mutabakatı bozulur.
+
+Bildiren kişi için ham IP tutulmaz: tuzlanmış bir özet yalnız aynı ziyaretçinin
+aynı ilanı tekrar bildirmesini engeller.
+
+Yönetim arayüzü yerine komut satırı (`npm run moderate`) tercih edildi: web
+paneli yeni bir kimlik doğrulama yüzeyi, oturum modeli ve saldırı alanı demek.
+Operatör tek kişi ve zaten veritabanı adresine sahip.
+
 ### Coğrafi veri build-time'da
 
 Natural Earth verisi indirilip sadeleştirilir, ülke başına ayrı TopoJSON dosyasına bölünür ve kendi origin'imizden sunulur. İstemci yalnız içine girdiği ülkenin dosyasını indirir (8–44 KB); 4.454 poligon asla tek seferde gitmez.
@@ -217,7 +243,9 @@ Kısayol: `npm run setup` üçünü sırayla çalıştırır.
 | `npm run dev` | Geliştirme sunucusu |
 | `npm run build` | Üretim derlemesi |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Birim testleri (`node --test`, tsx ile) |
+| `npm test` | Bütün testler; veritabanı testleri `TEST_DATABASE_URL` yoksa atlanır |
+| `npm run test:db` | Yalnız veritabanı testleri |
+| `npm run moderate` | Moderasyon konsolu (`-- reports`, `-- move`, `-- hide`, `-- log`) |
 
 ---
 
@@ -245,6 +273,7 @@ app/
     [cat]/                 aynı sayfanın kategoriye özel hâli (/t/TUR/software)
   api/
     board · board/children · top · territory · search · activity · stats · categories
+    report                 yanlış kategori bildirimi (kuyruğa yazar, değiştirmez)
     quote                  fiyat hesabı (yazma yok)
     checkout               intent oluşturur + sağlayıcıya yönlendirir
     pay                    yalnız yerel geliştirme için mock ödeme onayı
@@ -265,16 +294,40 @@ lib/
   rankings.ts              liste görünümü sorguları (kapsam × kategori)
   categories.ts            kategori okuma + doğrulama
   flags.ts / flagColor.ts  bayrak eşlemesi ve aksan rengi çıkarımı
+  moderation.ts            bildirim, kategori taşıma/birleştirme, denetim kaydı
   normalize.ts             URL/sosyal profil normalizasyonu
   payments.ts              sağlayıcı arayüzü
   brand.ts                 marka metinleri + fiyat politikası (tek kaynak)
 scripts/
-  build-geo.mjs · migrate.mjs · seed.mjs
+  build-geo.mjs · build-flags.mjs · migrate.mjs · seed.mjs · moderate.ts
 tests/
   pricing · normalize · whop-webhook · time · flags
+  db/                      gerçek Postgres: ödeme zinciri, sıralama, moderasyon
 ```
 
 ---
+
+## Test
+
+Saf fonksiyonlar (fiyat matematiği, link normalizasyonu, webhook imzası,
+bayrak eşlemesi) doğrudan koşar. Veritabanına dokunan kod — ödeme zinciri,
+kategori filtreleri, moderasyon — **gerçek bir Postgres** ister:
+
+```bash
+createdb cartogram_test
+TEST_DATABASE_URL=postgres://localhost/cartogram_test npm test
+```
+
+Değişken tanımlı değilse o testler atlanır ve `npm test` yine geçer.
+
+Neden bellek içi bir taklit değil: sorguların yarısı pencere fonksiyonu,
+`LATERAL`, `DISTINCT ON` ve `FOR UPDATE` kullanıyor. Bunları taklit eden bir
+motor, testin geçtiği ama üretimin patladığı bir yanılsama üretir.
+
+İki koruma var: veritabanı **adı `test` içermiyorsa** hiçbir test çalışmaz
+(`resetDb()` bütün tabloları TRUNCATE ediyor, üretim adresinin yanlışlıkla
+yazılması tek komutla veri kaybı olurdu) ve testler `--test-concurrency=1` ile
+seri koşar (dosyalar paralel çalışınca biri diğerinin verisini siliyordu).
 
 ## Erişilebilirlik
 
@@ -292,15 +345,13 @@ Harita fare/dokunmatik dışında da kullanılabilir olmalı. `TerritorySearch` 
 ## Bilinen sınırlar
 
 - Whop checkout'un çalışması için business hesabı, API anahtarı, account ID ve webhook secret ortam değişkenleri gerekir. `/api/pay` yalnız yerel geliştirme taklididir.
-- **Moderasyon yok.** Herkes herhangi bir bağlantı ekleyebiliyor. Şikâyet formu, gizle/engelle aksiyonları ve denetim kaydı lansman öncesi şart.
+- **Moderasyon yarı otomatik.** Şikâyet formu, gizle/göster, kategori taşıma
+  ve denetim kaydı var; ama kuyruğu kimse bildirmiyor — operatörün
+  `npm run moderate -- reports` komutunu kendisi çalıştırması gerekiyor.
+  Bildirim (mail/webhook) ve içerik denetimi (yasaklı link) hâlâ yok.
 - **Reklamveren profil sayfaları yok.** (`/brand/<link>` — planlı.)
-- **Testler yalnız saf fonksiyonları kapsıyor.** Fiyat matematiği, link
-  normalizasyonu, webhook imzası, zaman etiketi ve bayrak eşlemesi test
-  altında; veritabanına dokunan `applyPayment`/`computeQuote` ve kategori
-  sorguları için test veritabanı gerekiyor.
-- **Kategori seçimi moderasyona bağlı değil.** Reklamveren kendi kategorisini
-  seçiyor; yanlış kategoriye girmeyi engelleyen bir denetim yok. Şikâyet
-  akışıyla birlikte ele alınmalı.
+- **Uçtan uca (tarayıcı) testi yok.** Sunucu tarafı 98 testle kapalı ama
+  arayüz akışları elle deneniyor.
 - Natural Earth'te 95 bölge aynı ISO kodunu paylaşıyor (Bosna'nın kantonları hep `BA-BIH`). Aynı kod aynı bölge sayılır; haritadaki tüm parçalar aynı sahibi gösterir.
 
 ## Veri ve hukuk

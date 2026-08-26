@@ -1349,3 +1349,20 @@ body:has(.doc) { overflow: auto; }
   .share-cats { grid-template-columns: 1fr; gap: 6px; }
   .share-cat { padding: 9px 11px; }
 }
+
+/* --------------------------------------------------- bildirim (moderasyon)
+   Bayrak düğmesi satırın sonunda, sessiz durur: asıl eylem "Visit", bu ise
+   nadiren kullanılan bir güvenlik supabı. Görünür ama dikkat çekmiyor. */
+.flag-btn {
+  width: 26px; height: 26px; font-size: 12px; flex: none;
+  background: transparent; border-color: transparent; color: var(--muted-dim);
+}
+.flag-btn:hover { background: rgba(251, 113, 133, 0.14); color: var(--danger); }
+
+.modal textarea {
+  width: 100%; padding: 10px 12px; font: inherit; font-size: 14px;
+  color: var(--ink); background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  resize: vertical; min-height: 56px;
+}
+.modal textarea:focus-visible { border-color: var(--accent); }

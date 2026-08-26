@@ -189,3 +189,49 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pl_slot
 -- Kategori bazlı sıralama sorgusunun taradığı ana yol.
 CREATE INDEX IF NOT EXISTS idx_pl_terr_cat
   ON placements(territory_id, category, total_cents DESC);
+
+-- ===========================================================================
+-- MODERASYON
+--
+-- Kategoriyi reklamverenin kendisi seçiyor. Yanlış kategoriye girmek ucuz bir
+-- oyun: kalabalık bir yarıştan kaçıp boş bir kategoride #1 görünmek. Bunu
+-- satın alma anında engellemenin güvenilir bir yolu yok (bir alan adının
+-- hangi sektöre ait olduğunu makine kesin bilemez), o yüzden döngü şöyle:
+-- ziyaretçi bildirir -> operatör CLI ile taşır/gizler -> her işlem loglanır.
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS category_reports (
+  id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  placement_id       BIGINT  NOT NULL REFERENCES placements(id) ON DELETE CASCADE,
+  -- Bildirenin önerdiği kategori; boş bırakılabilir ("burası yanlış ama
+  -- doğrusunu bilmiyorum" da bir sinyaldir).
+  suggested_category TEXT    REFERENCES categories(slug),
+  reason             TEXT,
+  -- IP+UA'nın tuzlanmış özeti. Ham IP TUTULMAZ: tek amaç aynı ziyaretçinin
+  -- aynı yerleşimi tekrar tekrar bildirmesini engellemek.
+  reporter_hash      TEXT    NOT NULL,
+  status             TEXT    NOT NULL DEFAULT 'open'
+                     CHECK (status IN ('open','accepted','rejected')),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at        TIMESTAMPTZ,
+  UNIQUE (placement_id, reporter_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_reports_open
+  ON category_reports(status, created_at DESC);
+
+-- Append-only denetim kaydı. Bir yerleşimin kategorisi neden değişti,
+-- kim değiştirdi sorusunun cevabı burada durur.
+CREATE TABLE IF NOT EXISTS moderation_log (
+  id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  action        TEXT    NOT NULL,
+  placement_id  BIGINT  REFERENCES placements(id) ON DELETE SET NULL,
+  advertiser_id BIGINT  REFERENCES advertisers(id),
+  detail        JSONB   NOT NULL DEFAULT '{}'::jsonb,
+  actor         TEXT    NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_modlog_time ON moderation_log(created_at DESC);
+
+-- Tıklama artık kategori bazında: aynı marka aynı bölgede iki kategoride
+-- yer alabildiği için sayaç hangi yarıştan tıklandığını bilmeli.
+ALTER TABLE clicks ADD COLUMN IF NOT EXISTS
+  category TEXT REFERENCES categories(slug);
