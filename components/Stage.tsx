@@ -6,30 +6,53 @@ import type { FeatureCollection, Geometry } from 'geojson'
 import Globe, { type Fill, type TerrProps } from './Globe'
 import StakeModal from './StakeModal'
 import TerritorySearch from './TerritorySearch'
+import CategoryBar from './CategoryBar'
+import Flag from './Flag'
 import { BRAND, PRICING, formatMoney } from '@/lib/brand'
+import type { Category } from '@/lib/categories'
+import { flagAccent } from '@/lib/flagColor'
 import { relTime } from '@/lib/time'
 
 export type BoardEntry = {
   code: string; slug: string; name: string; bidders: number; totalCents: number
-  leader: { key: string; displayUrl: string; color: string | null; iconUrl: string | null } | null
+  leader: {
+    key: string; displayUrl: string; color: string | null; iconUrl: string | null
+    category: string
+  } | null
 }
 export type Totals = { raisedCents: number; activeTerritories: number; activeCountries: number; advertisers: number }
 export type TopRow = {
   key: string; display_url: string; outbound_url: string
   brand_color: string | null; icon_url: string | null
   title: string | null; territory: string; territory_code: string
-  territory_slug: string; kind: string
+  territory_slug: string; kind: string; category: string
   total_cents: number; click_count: number
 }
-export type Board = { totals: Totals; countries: Record<string, BoardEntry>; top: TopRow[] }
+export type Board = {
+  totals: Totals
+  countries: Record<string, BoardEntry>
+  top: TopRow[]
+  categories: Category[]
+}
+
+/** Bölgenin kategori tablosu — hangi yarışta kim önde, hangisi hâlâ boş. */
+export type CategoryStanding = {
+  slug: string; name: string; icon: string; color: string
+  bidders: number; totalCents: number
+  leader: { key: string; displayUrl: string; iconUrl: string | null; totalCents: number } | null
+}
 
 export type Detail = {
   territory: {
     code: string; slug: string; name: string; kind: 'country' | 'admin1'
     subtype: string | null; lon: number; lat: number; selectable: boolean
+    iso2: string | null
     parent: { code: string; name: string; slug: string } | null
     childCount: number
   }
+  /** Panelin açık olduğu kategori (null = tümü). */
+  category: string | null
+  categories: CategoryStanding[]
   floorCents: number
   topUpFloorCents: number
   children: { total: number; filled: number; pooledCents: number } | null
@@ -41,6 +64,7 @@ export type Detail = {
   placements: Array<{
     rank: number; key: string; displayUrl: string; outboundUrl: string
     title: string | null; iconUrl: string | null; color: string | null
+    category: string
     totalCents: number; clicks: number
   }>
 }
@@ -55,6 +79,13 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
   const [board, setBoard] = useState<Board>(initialBoard)
   const [countries, setCountries] = useState<FeatureCollection<Geometry, TerrProps> | null>(null)
   const [index, setIndex] = useState<IndexRow[]>([])
+
+  // Kategori: haritanın, tablonun ve panelin ortak kapsamı. null = tümü.
+  const [category, setCategory] = useState<string | null>(null)
+  // Bayrak boyaması: ürünün varsayılan görünümü. Kapatınca marka renklerine
+  // dönülür — yoğun bir haritada sahiplik okumak isteyen için.
+  const [flagsOn, setFlagsOn] = useState(true)
+  const [accent, setAccent] = useState<string | null>(null)
 
   const [drill, setDrill] = useState<string | null>(null)
   const [childGeo, setChildGeo] = useState<FeatureCollection<Geometry, TerrProps> | null>(null)
@@ -138,26 +169,86 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     fetch('/geo/index.json').then((r) => r.json()).then(setIndex).catch(() => {})
   }, [])
 
+  /**
+   * Kategori parametresini tek yerden ekler. Her fetch'te elle "?cat=" yazmak
+   * bir uçta unutulduğunda harita ile tablonun farklı kapsam göstermesine
+   * yol açıyordu.
+   */
+  const withCat = useCallback(
+    (url: string) => (category ? `${url}${url.includes('?') ? '&' : '?'}cat=${category}` : url),
+    [category],
+  )
+
+  /**
+   * Kategorinin GÜNCEL değeri.
+   *
+   * withCat kategoriye bağlı olduğu için kimliği değişiyor ve bu, kategori
+   * değişince yeniden çalışması GEREKEN effect'ler için doğru. Ama bölge
+   * detayını yükleyen akış zincirleme çağrılardan geçiyor (derin bağlantı →
+   * selectFromSearch → onSelect → loadDetail) ve zincirin başında yakalanan
+   * withCat, arada kategori değişmişse bayat kalıyordu: harita "yazılım"
+   * derken panel bütün kategorileri listeliyordu. Detay isteği bu yüzden
+   * closure'dan değil ref'ten okuyor.
+   */
+  const categoryRef = useRef<string | null>(null)
+  categoryRef.current = category
+  const withCurrentCat = useCallback((url: string) => {
+    const c = categoryRef.current
+    return c ? `${url}${url.includes('?') ? '&' : '?'}cat=${c}` : url
+  }, [])
+
   const refreshBoard = useCallback(async () => {
     try {
-      const b = await fetch('/api/board').then((r) => r.json())
+      const b = await fetch(withCat('/api/board')).then((r) => r.json())
       setBoard(b)
-      const t = await fetch(`/api/top${drill ? `?code=${drill}` : ''}`).then((r) => r.json())
+      const t = await fetch(withCat(`/api/top${drill ? `?code=${drill}` : ''}`)).then((r) => r.json())
       setTop(t.top || [])
       if (drill) {
-        const c = await fetch(`/api/board/children?code=${drill}`).then((r) => r.json())
+        const c = await fetch(withCat(`/api/board/children?code=${drill}`)).then((r) => r.json())
         setChildBoard(c.children || {})
       }
     } catch { /* sessizce geç: eski veri ekranda kalsın */ }
-  }, [drill])
+  }, [drill, withCat])
 
   // Bir ülkenin içine girildiğinde/çıkıldığında tabloyu o kapsama daralt.
   useEffect(() => {
     let cancelled = false
-    fetch(`/api/top${drill ? `?code=${drill}` : ''}`)
+    fetch(withCat(`/api/top${drill ? `?code=${drill}` : ''}`))
       .then((r) => r.json())
       .then((d) => { if (!cancelled) setTop(d.top || []) })
       .catch(() => {})
+    return () => { cancelled = true }
+  }, [drill, withCat])
+
+  // Kategori değişince ekrandaki HER yüzey yeniden yüklenir: harita dolguları,
+  // il katmanı ve açık panel. Biri geride kalırsa kullanıcı iki farklı
+  // kategorinin verisini yan yana görür.
+  const firstCat = useRef(true)
+  useEffect(() => {
+    if (firstCat.current) { firstCat.current = false; return }
+    let cancelled = false
+    void (async () => {
+      try {
+        const b = await fetch(withCat('/api/board')).then((r) => r.json())
+        if (cancelled) return
+        setBoard(b)
+        if (drill) {
+          const c = await fetch(withCat(`/api/board/children?code=${drill}`)).then((r) => r.json())
+          if (!cancelled) setChildBoard(c.children || {})
+        }
+      } catch { /* eski veri kalsın */ }
+    })()
+    return () => { cancelled = true }
+    // selected için ayrı yükleme aşağıdaki loadDetail çağrısıyla yapılır.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category])
+
+  // İçine girilen ülkenin bayrağından aksan rengi: alt birimler ve panel
+  // başlığı o ülkenin paletini alır.
+  useEffect(() => {
+    let cancelled = false
+    if (!drill) { setAccent(null); return }
+    flagAccent(drill).then((c) => { if (!cancelled) setAccent(c) })
     return () => { cancelled = true }
   }, [drill])
 
@@ -205,7 +296,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     const requestId = ++detailRequest.current
     setDetailLoading(true)
     try {
-      const d: Detail = await fetch(`/api/territory?code=${encodeURIComponent(code)}`).then((r) => r.json())
+      const d: Detail = await fetch(withCurrentCat(`/api/territory?code=${encodeURIComponent(code)}`)).then((r) => r.json())
       if (requestId !== detailRequest.current) return null
       setDetail(d)
       return d
@@ -216,7 +307,18 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     } finally {
       if (requestId === detailRequest.current) setDetailLoading(false)
     }
-  }, [])
+  }, [withCurrentCat])
+
+  // Açık panel de kategoriyle birlikte tazelenir.
+  const catForDetail = useRef<string | null>(null)
+  useEffect(() => {
+    if (catForDetail.current === category) return
+    catForDetail.current = category
+    if (selected) void loadDetail(selected)
+    // selected bilerek bağımlılık değil: burada yalnız kategori değişimi
+    // tetikleyici, seçim değişimi kendi akışında zaten yüklüyor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, loadDetail])
 
   const clearSelection = useCallback(() => {
     detailRequest.current += 1
@@ -241,7 +343,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     try {
       const [topo, children] = await Promise.all([
         fetch(`/geo/admin1/${code}.json`).then((r) => (r.ok ? r.json() : null)),
-        fetch(`/api/board/children?code=${code}`).then((r) => r.json()).catch(() => ({ children: {} })),
+        fetch(withCat(`/api/board/children?code=${code}`)).then((r) => r.json()).catch(() => ({ children: {} })),
       ])
       if (requestId !== countryRequest.current) return false
       if (topo) setChildGeo(feature(topo, topo.objects.admin1) as unknown as FeatureCollection<Geometry, TerrProps>)
@@ -254,7 +356,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     } finally {
       if (requestId === countryRequest.current) setChildLoading(false)
     }
-  }, [indexByCode])
+  }, [indexByCode, withCat])
 
   const exitCountry = useCallback(() => {
     countryRequest.current += 1
@@ -304,6 +406,10 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
       const entered = await enterCountry(row.parentCode)
       if (!entered) return
     }
+    // Mobilde alt panel kapalı başlar. Aramadan ya da paylaşılan bir
+    // /t/<kod> bağlantısından gelen ziyaretçi paneli açılmış görmeli;
+    // aksi halde bölgeyi seçiyor ama sıralamayı hiç göremiyordu.
+    setSheetOpen(true)
     setSelected(row.code)
     await loadDetail(row.code)
   }, [drill, enterCountry, loadDetail, onSelect])
@@ -319,10 +425,21 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
     const code = p.get('t')
     if (!code) return
     deepLinked.current = true
+    // Paylaşım kartından gelen ziyaretçi kartın gösterdiği kategoriye açılır.
+    // Kategori state'i asenkron uygulandığı için adres, aşağıdaki istekte
+    // withCat yerine DOĞRUDAN buradaki değerden kuruluyor.
+    const linkedCat = p.get('cat')
+    if (linkedCat) {
+      setCategory(linkedCat)
+      // Ref'i beklemeden ayarlıyoruz: aşağıdaki zincir state'in bir sonraki
+      // render'da uygulanmasını bekleyemez.
+      categoryRef.current = linkedCat
+    }
+    const catQuery = linkedCat ? `&cat=${encodeURIComponent(linkedCat)}` : ''
     window.history.replaceState({}, '', window.location.pathname)
     void (async () => {
       try {
-        const d: Detail = await fetch(`/api/territory?code=${encodeURIComponent(code)}`).then((r) => r.json())
+        const d: Detail = await fetch(`/api/territory?code=${encodeURIComponent(code)}${catQuery}`).then((r) => r.json())
         if (!d?.territory) return
         await selectFromSearch({
           code: d.territory.code,
@@ -335,10 +452,10 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
 
   /** "Ülkenin tamamını da al" — il panelinden ülke teklifine geçiş. */
   const claimParent = useCallback(async (code: string) => {
-    const d: Detail = await fetch(`/api/territory?code=${encodeURIComponent(code)}`).then((r) => r.json())
+    const d: Detail = await fetch(withCurrentCat(`/api/territory?code=${encodeURIComponent(code)}`)).then((r) => r.json())
     setStakePrefill(null)
     setStakeFor(d)
-  }, [])
+  }, [withCurrentCat])
 
   // Escape: yalnız en üst katmanı kapatır (orijinalde iç içe modallar
   // birlikte kapanıp kullanıcının bağlamını kaybettiriyordu).
@@ -400,7 +517,7 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
         sessionStorage.removeItem(`${BRAND.slug}.pendingUpsell`)
         try {
           const u = JSON.parse(pending) as { code: string; url: string; mode: 'product' | 'social' }
-          const detail: Detail = await fetch(`/api/territory?code=${encodeURIComponent(u.code)}`).then((r) => r.json())
+          const detail: Detail = await fetch(withCurrentCat(`/api/territory?code=${encodeURIComponent(u.code)}`)).then((r) => r.json())
           if (active) { setStakePrefill({ url: u.url, mode: u.mode }); setStakeFor(detail) }
         } catch { /* bozuk kayıt: yok say */ }
       } catch { /* dönüş bildirimi gösterilmez; harita sunucu gerçeğini korur */ }
@@ -434,6 +551,8 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
           priceCountryCents={PRICING.countryFloorCents}
           priceAdmin1Cents={PRICING.admin1FloorCents}
           paused={!!stakeFor || searchOpen}
+          flagsOn={flagsOn}
+          accent={accent}
         />
 
         {/* --------------------------------------------------------- sol üst */}
@@ -443,6 +562,23 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
               <span className="dot" aria-hidden="true" />
               <span className="wordmark">{BRAND.wordmark.head}<em>{BRAND.wordmark.tail}</em></span>
             </a>
+            <a
+              className="icon-btn"
+              href={`/list${category ? `?cat=${category}` : ''}`}
+              aria-label="Open list view"
+              title="List view — world, country and state rankings"
+            >
+              ☰
+            </a>
+            <button
+              className={`icon-btn${flagsOn ? ' on' : ''}`}
+              onClick={() => setFlagsOn((v) => !v)}
+              aria-pressed={flagsOn}
+              aria-label="Toggle flag colours"
+              title={flagsOn ? 'Flags on' : 'Flags off'}
+            >
+              🏳️
+            </button>
             <button className="icon-btn help-btn" onClick={() => setIntroOpen(true)}
               aria-label="What is this?" title="What is this?">?</button>
           </div>
@@ -469,11 +605,23 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
           </div>
         </header>
 
+        {/* ------------------------------------------------------- üst orta */}
+        <div className="overlay o-tc">
+          <CategoryBar
+            categories={board.categories}
+            value={category}
+            onChange={setCategory}
+          />
+        </div>
+
         {/* --------------------------------------------------------- sağ üst */}
+        {/* Sıra bilinçli: dar ekranda yalnız SON satır görünür kalıyor
+            (bkz. globals.css), o yüzden en anlamlı gösterge olan toplam
+            harcama en altta duruyor. */}
         <div className="overlay o-tr card stats" role="status" aria-label="Live counters">
           <div className="stats-row"><span className="k">Slots taken</span><span className="v">{totals.activeTerritories}</span></div>
-          <div className="stats-row"><span className="k">Total spend</span><span className="v">{formatMoney(totals.raisedCents)}</span></div>
           <div className="stats-row"><span className="k">Advertisers</span><span className="v">{totals.advertisers}</span></div>
+          <div className="stats-row"><span className="k">Total spend</span><span className="v">{formatMoney(totals.raisedCents)}</span></div>
         </div>
 
         {/* --------------------------------------------------------- sol alt */}
@@ -519,6 +667,9 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
               childBoard={childBoard}
               childLoading={childLoading}
               drill={drill}
+              category={category}
+              accent={accent}
+              onPickCategory={setCategory}
               onBack={clearSelection}
               onExitCountry={exitCountry}
               onPickChild={(code) => { setSelected(code); loadDetail(code) }}
@@ -530,6 +681,9 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
             <TopSpenders
               top={top}
               drillName={drillMeta?.name || null}
+              drillCode={drill}
+              category={category}
+              categories={board.categories}
               onExitCountry={exitCountry}
               onOpenSearch={() => setSearchOpen(true)}
             />
@@ -564,6 +718,8 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
       {stakeFor && (
         <StakeModal
           detail={stakeFor}
+          categories={board.categories}
+          category={category}
           prefill={stakePrefill}
           onClose={() => { setStakeFor(null); setStakePrefill(null) }}
           onPaid={async (code) => {
@@ -583,9 +739,14 @@ export default function Stage({ initialBoard }: { initialBoard: Board }) {
 
 /* ------------------------------------------------------------ alt bileşenler */
 
-function TopSpenders({ top, drillName, onExitCountry, onOpenSearch }: {
-  top: TopRow[]; drillName: string | null; onExitCountry: () => void; onOpenSearch: () => void
+function TopSpenders({ top, drillName, drillCode, category, categories, onExitCountry, onOpenSearch }: {
+  top: TopRow[]; drillName: string | null; drillCode: string | null
+  category: string | null; categories: Category[]
+  onExitCountry: () => void; onOpenSearch: () => void
 }) {
+  const active = categories.find((c) => c.slug === category) || null
+  const byslug = (slug: string) => categories.find((c) => c.slug === slug)
+
   return (
     <>
       <div className="panel-head">
@@ -595,13 +756,21 @@ function TopSpenders({ top, drillName, onExitCountry, onOpenSearch }: {
           </div>
         )}
         <div className="panel-eyebrow">
-          <span className="ad-tag">Ad</span> {drillName ? `Top in ${drillName}` : 'Top placements'}
+          <span className="ad-tag">Ad</span>{' '}
+          {active ? `${active.icon} ${active.name}` : drillName ? `Top in ${drillName}` : 'Top placements'}
         </div>
-        <h2 className="panel-title">{drillName ? drillName : 'The Board'}</h2>
+        <div className="panel-title-row">
+          {drillCode && <Flag code={drillCode} size={28} />}
+          <h2 className="panel-title">{drillName ? drillName : 'The Board'}</h2>
+        </div>
         <p className="panel-sub">
-          {drillName
-            ? `${drillName} and its states, ranked by total spend.`
-            : 'Countries and states ranked by total spend.'}
+          {active
+            ? `${active.name} ranking${drillName ? ` in ${drillName}` : ' worldwide'} — categories are ranked separately.`
+            : drillName
+              ? `${drillName} and its states, ranked by total spend.`
+              : 'Countries and states ranked by total spend.'}
+          {' · '}
+          <a className="link" href={`/list${category ? `?cat=${category}` : ''}`}>Full list ↗</a>
         </p>
       </div>
       <div className="panel-body">
@@ -612,16 +781,24 @@ function TopSpenders({ top, drillName, onExitCountry, onOpenSearch }: {
           </div>
         ) : (
           <ol className="rank-list">
+            {/* Anahtara kategori de giriyor: aynı marka aynı bölgede iki
+                kategoride yarışabilir, ikisi de bu listeye düşebilir. */}
             {top.map((r, i) => (
-              <li key={`${r.key}-${r.territory_slug}`}>
+              <li key={`${r.key}-${r.territory_slug}-${r.category}`}>
                 <div className={`rank-row ${i === 0 ? 'leader' : ''}`}>
                   <span className="rank-no">{i === 0 ? '👑' : i + 1}</span>
                   <img className="avatar" src={`/api/icon?key=${encodeURIComponent(r.key)}`} alt="" width={26} height={26} />
                   <span className="rank-main">
                     <span className="rank-name">{r.display_url}</span>
                     <span className="rank-meta">
+                      {/* Alt birim kodu ('TR-34') da ülkenin bayrağına çözülür. */}
+                      <Flag code={r.territory_code} size={14} />
                       {r.territory}
-                      {r.kind === 'admin1' && <span className="chip sub" style={{ marginLeft: 6 }}>state</span>}
+                      {!category && byslug(r.category) && (
+                        <span className="chip cat" style={{ marginLeft: 6, '--cat': byslug(r.category)!.color } as React.CSSProperties}>
+                          {byslug(r.category)!.icon} {byslug(r.category)!.name}
+                        </span>
+                      )}
                     </span>
                   </span>
                   <span className="rank-amt">{formatMoney(r.total_cents)}</span>
@@ -698,15 +875,20 @@ function IntroSheet({ onClose, onSearch }: { onClose: () => void; onSearch: () =
   )
 }
 
-function ShareButton({ code, name, onToast }: {
-  code: string; name: string; onToast: (message: string) => void
+function ShareButton({ code, name, category, onToast }: {
+  code: string; name: string; category: string | null
+  onToast: (message: string) => void
 }) {
   const [busy, setBusy] = useState(false)
 
   const share = async () => {
     if (busy) return
     setBusy(true)
-    const url = `${window.location.origin}/t/${encodeURIComponent(code)}`
+    // Kategori seçiliyken paylaşılan adres de o kategoriyi taşır; kart
+    // "Türkiye'nin yazılım #1'i" der, birleşik sıralamayı değil.
+    const url = `${window.location.origin}/t/${encodeURIComponent(code)}${
+      category ? `/${encodeURIComponent(category)}` : ''
+    }`
     try {
       if (navigator.share) {
         await navigator.share({ title: `${name} — ${BRAND.name}`, url })
@@ -734,10 +916,13 @@ function ShareButton({ code, name, onToast }: {
   )
 }
 
-function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBack, onExitCountry, onPickChild, onStake, onClaimParent, onToast }: {
+function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, category, accent, onPickCategory, onBack, onExitCountry, onPickChild, onStake, onClaimParent, onToast }: {
   detail: Detail; loading: boolean
   childBoard: Record<string, BoardEntry>; childLoading: boolean
   drill: string | null
+  category: string | null
+  accent: string | null
+  onPickCategory: (slug: string | null) => void
   onBack: () => void; onExitCountry: () => void
   onPickChild: (code: string) => void; onStake: () => void
   onClaimParent: (code: string) => void
@@ -745,10 +930,16 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBa
 }) {
   const t = detail.territory
   const isEmpty = detail.placements.length === 0
+  const active = detail.categories.find((c) => c.slug === category) || null
+  // Panel başlığı ülkenin bayrak rengini alır — hangi ülkede olduğun
+  // metne bakmadan görünür.
+  const headStyle = accent && t.kind === 'admin1'
+    ? ({ '--accent-terr': accent } as React.CSSProperties)
+    : undefined
 
   return (
     <>
-      <div className="panel-head">
+      <div className="panel-head" style={headStyle}>
         <div className="crumbs">
           <button onClick={onExitCountry}>🌍 World</button>
           {t.parent && (<><span>›</span><button onClick={() => onPickChild(t.parent!.code)}>{t.parent.name}</button></>)}
@@ -756,12 +947,15 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBa
         </div>
         <div className="panel-eyebrow">
           <span className="ad-tag">Ad slot</span>
-          {isEmpty ? 'Available' : `${detail.placements.length} advertisers competing`}
+          {active
+            ? `${active.icon} ${active.name}`
+            : isEmpty ? 'Available' : `${detail.placements.length} advertisers competing`}
           {t.kind === 'admin1' && <span className="chip sub">{t.subtype || 'State'}</span>}
         </div>
         <div className="panel-title-row">
+          <Flag code={t.kind === 'country' ? t.code : (t.parent?.code ?? t.code)} size={28} />
           <h2 className="panel-title">{t.name}</h2>
-          <ShareButton code={t.code} name={t.name} onToast={onToast} />
+          <ShareButton code={t.code} name={t.name} category={category} onToast={onToast} />
         </div>
         {detail.children && (
           <p className="panel-sub">
@@ -789,13 +983,23 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBa
         ) : (
           <ol className="rank-list">
             {detail.placements.map((p) => (
-              <li key={p.key}>
+              <li key={`${p.key}-${p.category}`}>
                 <div className={`rank-row ${p.rank === 1 ? 'leader' : ''}`}>
                   <span className="rank-no">{p.rank === 1 ? '👑' : p.rank}</span>
                   <img className="avatar" src={`/api/icon?key=${encodeURIComponent(p.key)}`} alt="" width={26} height={26} />
                   <span className="rank-main">
                     <span className="rank-name">{p.displayUrl}</span>
-                    <span className="rank-meta">{p.clicks} clicks</span>
+                    <span className="rank-meta">
+                      {!category && (() => {
+                        const c = detail.categories.find((x) => x.slug === p.category)
+                        return c ? (
+                          <span className="chip cat" style={{ '--cat': c.color } as React.CSSProperties}>
+                            {c.icon} {c.name}
+                          </span>
+                        ) : null
+                      })()}
+                      {p.clicks} clicks
+                    </span>
                   </span>
                   <span className="rank-amt">{formatMoney(p.totalCents)}</span>
                   <VisitLink url={p.outboundUrl} advertiserKey={p.key} territoryCode={t.code} />
@@ -803,6 +1007,40 @@ function TerritoryPanel({ detail, loading, childBoard, childLoading, drill, onBa
               </li>
             ))}
           </ol>
+        )}
+
+        {/* Kategori tablosu: bu bölgede hangi yarışta kim önde, hangisi boş.
+            Ürünün ana vaadi burada görünür — yazılım otomotivle yarışmıyor. */}
+        {!loading && detail.categories.length > 0 && (
+          <div className="cat-standings">
+            <div className="panel-eyebrow" style={{ padding: '10px 10px 4px' }}>
+              {active ? 'Other categories here' : `Categories in ${t.name}`}
+            </div>
+            <div className="cat-grid">
+              {detail.categories
+                .filter((c) => c.slug !== category)
+                .slice(0, active ? 6 : 8)
+                .map((c) => (
+                  <button
+                    key={c.slug}
+                    className={`cat-cell${c.leader ? '' : ' open'}`}
+                    style={{ '--cat': c.color } as React.CSSProperties}
+                    onClick={() => onPickCategory(c.slug)}
+                    title={c.leader ? `${c.leader.displayUrl} leads ${c.name}` : `${c.name} is still open`}
+                  >
+                    <span className="cat-cell-icon" aria-hidden="true">{c.icon}</span>
+                    <span className="cat-cell-main">
+                      <span className="nm">{c.name}</span>
+                      <span className="am">
+                        {c.leader
+                          ? `${c.leader.displayUrl} · ${formatMoney(c.leader.totalCents)}`
+                          : `open · from ${formatMoney(detail.floorCents)}`}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+            </div>
+          </div>
         )}
 
         {/* Çapraz satış: il/eyalet alan biri ülkenin tamamını da isteyebilir.

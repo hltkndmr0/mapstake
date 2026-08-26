@@ -148,15 +148,25 @@ if (already > 0) {
   await c.end(); process.exit(0)
 }
 
+// Kategoriler ürünün merkezi: demo veri de kategorilere YAYILMALI. Hepsi
+// 'software' olsaydı "yazılım otomotivle yarışmıyor" fikri haritada hiç
+// görünmezdi — aynı ülkede farklı kategorilerin farklı liderleri var.
 const DEMO = [
-  { url: 'linear.app', mode: 'product', where: ['TUR', 'DEU', 'TR-34'], amounts: [1200, 500, 800] },
-  { url: 'vercel.com', mode: 'product', where: ['USA', 'TUR', 'US-CA'], amounts: [2400, 700, 1500] },
-  { url: 'raycast.com', mode: 'product', where: ['DEU', 'FRA', 'TR-34'], amounts: [900, 600, 400] },
-  { url: 'x.com/naval', mode: 'social', where: ['USA', 'IND'], amounts: [1800, 900] },
-  { url: 'github.com/vercel/next.js', mode: 'social', where: ['JPN', 'US-CA'], amounts: [700, 600] },
-  { url: 'posthog.com', mode: 'product', where: ['GBR', 'TR-06'], amounts: [1100, 300] },
-  { url: 'resend.com', mode: 'product', where: ['BRA', 'TR-35'], amounts: [600, 250] },
-  { url: 'cal.com', mode: 'product', where: ['ESP', 'TUR'], amounts: [500, 300] },
+  { url: 'linear.app',   mode: 'product', cat: 'software',   where: ['TUR', 'DEU', 'TR-34'], amounts: [1200, 500, 800] },
+  { url: 'vercel.com',   mode: 'product', cat: 'software',   where: ['USA', 'TUR', 'US-CA'], amounts: [2400, 700, 1500] },
+  { url: 'raycast.com',  mode: 'product', cat: 'software',   where: ['DEU', 'FRA', 'TR-34'], amounts: [900, 600, 400] },
+  { url: 'togg.com.tr',  mode: 'product', cat: 'automotive', where: ['TUR', 'TR-34', 'DEU'], amounts: [1500, 900, 400] },
+  { url: 'rivian.com',   mode: 'product', cat: 'automotive', where: ['USA', 'US-CA'],        amounts: [2100, 1200] },
+  { url: 'monzo.com',    mode: 'product', cat: 'finance',    where: ['GBR', 'TUR'],          amounts: [1400, 400] },
+  { url: 'getir.com',    mode: 'product', cat: 'food',       where: ['TUR', 'TR-34', 'GBR'], amounts: [1000, 1100, 300] },
+  { url: 'trendyol.com', mode: 'product', cat: 'retail',     where: ['TUR', 'TR-35'],        amounts: [1700, 500] },
+  { url: 'x.com/naval',  mode: 'social',  cat: 'media',      where: ['USA', 'IND'],          amounts: [1800, 900] },
+  { url: 'github.com/vercel/next.js', mode: 'social', cat: 'software', where: ['JPN', 'US-CA'], amounts: [700, 600] },
+  { url: 'posthog.com',  mode: 'product', cat: 'software',   where: ['GBR', 'TR-06'],        amounts: [1100, 300] },
+  { url: 'resend.com',   mode: 'product', cat: 'software',   where: ['BRA', 'TR-35'],        amounts: [600, 250] },
+  { url: 'cal.com',      mode: 'product', cat: 'services',   where: ['ESP', 'TUR'],          amounts: [500, 300] },
+  { url: 'gymshark.com', mode: 'product', cat: 'fashion',    where: ['GBR', 'USA', 'TR-34'], amounts: [800, 700, 350] },
+  { url: 'airbnb.com',   mode: 'product', cat: 'travel',     where: ['ESP', 'TUR', 'TR-07'], amounts: [1300, 600, 450] },
 ]
 const colorFor = (key) => {
   let h = 0
@@ -192,9 +202,9 @@ for (const item of DEMO) {
     seq++
 
     const plId = (await c.query(
-      `INSERT INTO placements (territory_id, advertiser_id, total_cents, first_staked_at, reached_current_total_at)
-       VALUES ($1,$2,$3,$4,$4) RETURNING id`,
-      [t.id, advId, amount, at],
+      `INSERT INTO placements (territory_id, advertiser_id, total_cents, first_staked_at, reached_current_total_at, category)
+       VALUES ($1,$2,$3,$4,$4,$5) RETURNING id`,
+      [t.id, advId, amount, at, item.cat],
     )).rows[0].id
 
     // Demo veri de gerçek ödeme zincirinden geçer: intent -> payment -> stake_event.
@@ -203,9 +213,9 @@ for (const item of DEMO) {
     const intentId = `seed-intent-${seq}`
     await c.query(
       `INSERT INTO intents (id, territory_id, mode, canonical_key, display_url, outbound_url,
-                            amount_cents, existing_total_cents, projected_rank, status, expires_at, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,0,1,'paid',$8,$8)`,
-      [intentId, t.id, item.mode, key, key, outbound, amount, at],
+                            amount_cents, existing_total_cents, projected_rank, status, expires_at, created_at, category)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,0,1,'paid',$8,$8,$9)`,
+      [intentId, t.id, item.mode, key, key, outbound, amount, at, item.cat],
     )
     const payId = (await c.query(
       `INSERT INTO payments (provider_event_id, intent_id, amount_cents, status, created_at)
@@ -218,9 +228,9 @@ for (const item of DEMO) {
       [plId, payId, amount, at],
     )
     await c.query(
-      `INSERT INTO activity (public_id, territory_id, advertiser_id, amount_cents, rank_after, created_at)
-       VALUES ($1,$2,$3,$4,1,$5)`,
-      [`${advId}-${t.id}-seed`, t.id, advId, amount, at],
+      `INSERT INTO activity (public_id, territory_id, advertiser_id, amount_cents, rank_after, created_at, category)
+       VALUES ($1,$2,$3,$4,1,$5,$6)`,
+      [`${advId}-${t.id}-seed`, t.id, advId, amount, at, item.cat],
     )
   }
 }

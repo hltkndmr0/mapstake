@@ -128,3 +128,64 @@ CREATE TABLE IF NOT EXISTS clicks (
   session_hash  TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ===========================================================================
+-- KATEGORİLER
+--
+-- Bir yazılım markası bir otomotiv markasını geçmek zorunda kalmasın diye
+-- yarış kategori İÇİNDE yapılır. Envanter birimi artık (bölge x kategori):
+-- Türkiye'nin #1 yazılımı ile Türkiye'nin #1 otomotivi AYRI slotlardır.
+--
+-- Birincil anahtar neden slug (id değil): kategori kümesi küçük ve sabit.
+-- Slug ile URL parametresi (?cat=software), API gövdesi ve SQL filtresi aynı
+-- değeri taşır; hiçbir yerde id çözümlemesi gerekmez.
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS categories (
+  slug       TEXT PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  icon       TEXT    NOT NULL DEFAULT '•',
+  color      TEXT    NOT NULL DEFAULT '#8ab4f8',
+  sort_order INTEGER NOT NULL DEFAULT 100
+);
+
+-- Kategori listesinin TEK kaynağı burasıdır; arayüz de bu satırlardan
+-- beslenir (ikon/renk dahil). Ekleme yapmak için yeni bir VALUES satırı
+-- yeter — kod tarafında değişiklik gerekmez.
+INSERT INTO categories (slug, name, icon, color, sort_order) VALUES
+  ('software',   'Software & Tech',      '💻', '#7aa2ff', 10),
+  ('automotive', 'Automotive',           '🚗', '#ff8f6b', 20),
+  ('finance',    'Finance & Crypto',     '💳', '#5ed0a8', 30),
+  ('retail',     'Retail & E-commerce',  '🛍️', '#ffb545', 40),
+  ('food',       'Food & Drink',         '🍔', '#ff7a9c', 50),
+  ('fashion',    'Fashion & Beauty',     '👗', '#d68bff', 60),
+  ('health',     'Health & Fitness',     '🩺', '#4ecfd6', 70),
+  ('realestate', 'Real Estate',          '🏠', '#a3b18a', 80),
+  ('travel',     'Travel & Hospitality', '✈️', '#6cc7ff', 90),
+  ('education',  'Education',            '🎓', '#f2c14e', 100),
+  ('gaming',     'Gaming & Esports',     '🎮', '#9d7bff', 110),
+  ('media',      'Media & Creators',     '🎬', '#ff9ecd', 120),
+  ('sports',     'Sports',               '⚽', '#7ddf64', 130),
+  ('services',   'Services & B2B',       '🔧', '#9fb3c8', 140),
+  ('other',      'Other',                '✨', '#c9d4e3', 999)
+ON CONFLICT (slug) DO UPDATE SET
+  name = EXCLUDED.name, icon = EXCLUDED.icon,
+  color = EXCLUDED.color, sort_order = EXCLUDED.sort_order;
+
+-- Mevcut kurulumlar için: kolon eklenir, eski satırlar 'other' olur.
+-- DEFAULT değeri sayesinde geri dolum ayrı bir UPDATE istemez.
+ALTER TABLE placements ADD COLUMN IF NOT EXISTS
+  category TEXT NOT NULL DEFAULT 'other' REFERENCES categories(slug);
+ALTER TABLE intents ADD COLUMN IF NOT EXISTS
+  category TEXT NOT NULL DEFAULT 'other' REFERENCES categories(slug);
+ALTER TABLE activity ADD COLUMN IF NOT EXISTS
+  category TEXT NOT NULL DEFAULT 'other' REFERENCES categories(slug);
+
+-- Slot artık (bölge, reklamveren, kategori). Eski kısıt (bölge, reklamveren)
+-- aynı markanın iki kategoride yarışmasını engellerdi.
+ALTER TABLE placements DROP CONSTRAINT IF EXISTS placements_territory_id_advertiser_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pl_slot
+  ON placements(territory_id, advertiser_id, category);
+
+-- Kategori bazlı sıralama sorgusunun taradığı ana yol.
+CREATE INDEX IF NOT EXISTS idx_pl_terr_cat
+  ON placements(territory_id, category, total_cents DESC);

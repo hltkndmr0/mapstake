@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { geoOrthographic, geoPath, geoGraticule10, geoDistance, geoCentroid } from 'd3-geo'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
+import { flagUrl, hasFlag } from '@/lib/flags'
 
 export type TerrProps = { code: string; name: string; kind?: string; adm0?: string }
 export type Fill = { color: string | null; leaderKey: string | null; bidders: number; totalCents: number }
@@ -32,6 +33,10 @@ export type GlobeProps = {
   /** Boş bölgede gösterilecek fiyat etiketi için taban fiyatlar (cent). */
   priceCountryCents: number
   priceAdmin1Cents: number
+  /** Ülkeleri kendi bayraklarıyla boya. */
+  flagsOn?: boolean
+  /** İçine girilen ülkenin bayrağından türetilen renk; alt birimleri boyar. */
+  accent?: string | null
 }
 
 function prefersReducedMotion(): boolean {
@@ -48,6 +53,7 @@ export default function Globe(props: GlobeProps) {
   const {
     countries, subFeatures, fills, childFills, drillCode, selectedCode,
     onSelect, onClearFocus, cameraTarget, priceCountryCents, priceAdmin1Cents, paused = false,
+    flagsOn = true, accent = null,
   } = props
 
   const [rotation, setRotation] = useState<Rotation>([-14, -38, 0])
@@ -279,25 +285,40 @@ export default function Globe(props: GlobeProps) {
   )
 
   type Drawn = {
+    /**
+     * React anahtarı. `code` benzersiz DEĞİL: Natural Earth'te 24 ülkede
+     * toplam 95 poligon aynı kodu paylaşıyor (Bosna'nın 9 kantonu hep
+     * BA-BIH, Grönland'ın iki parçası GL-UO). Kod anahtar olarak
+     * kullanıldığında React aynı anahtarlı iki çocuk uyarısı veriyor ve
+     * güncellemede parçaları karıştırabiliyordu. Kod veri tarafında
+     * (data-code, dolgu eşlemesi) aynı kalır — tek bölge, çok parça.
+     */
+    id: string
     code: string; name: string; d: string; fill: Fill | undefined
     centroid: [number, number]; screen: [number, number] | null; box: number
+    /** Bayrak deseninin oturtulacağı ana kara parçası (ekran koordinatı). */
+    main: { x: number; y: number; w: number; h: number } | null
   }
 
   const drawFeatures = useCallback(
     (fc: FeatureCollection<Geometry, TerrProps> | null | undefined, fillMap: Record<string, Fill>): Drawn[] => {
       if (!fc) return []
       const out: Drawn[] = []
+      let i = 0
       for (const f of fc.features as Feature<Geometry, TerrProps>[]) {
         const code = f.properties?.code
+        i++
         if (!code) continue
         const d = path(f)
         if (!d) continue
         const centroid = geoCentroid(f) as [number, number]
-        const [[x0, y0], [x1, y1]] = pathBounds(d)
+        const { box, main } = measurePath(d)
         out.push({
+          id: `${code}#${i}`,
           code, name: f.properties.name, d, fill: fillMap[code], centroid,
           screen: visible(centroid[0], centroid[1]) ? projection(centroid) : null,
-          box: (x1 - x0) * (y1 - y0),
+          box,
+          main,
         })
       }
       return out
@@ -309,6 +330,9 @@ export default function Globe(props: GlobeProps) {
   const childShapes = useMemo(() => drawFeatures(subFeatures, childFills), [subFeatures, childFills, drawFeatures])
 
   const inDrill = !!drillCode && childShapes.length > 0
+  // color-mix desteklenmeyen tarayıcıda değer geçersiz sayılır ve fill
+  // yoksayılırdı; bu yüzden accent yoksa doğrudan düz renge düşüyoruz.
+  const emptySubFill = accent ? `color-mix(in srgb, ${accent} 26%, #eef3f8)` : '#e9eef5'
   inDrillRef.current = inDrill
   drillCodeRef.current = drillCode
 
@@ -328,13 +352,21 @@ export default function Globe(props: GlobeProps) {
     // Rozet ve yazıları büyütüyoruz; çakışma kutuları da bu ölçekle hesaplanır
     // ki eleme doğru kalsın. Büyüyen etiketler kalabalık yapmasın diye aynı
     // anda eşiği yükseltip yalnız önemli bölgeleri etiketliyoruz.
-    const ls = compact ? 1.9 : 1
-    const minBox = (inDrill ? 150 : 620) * (compact ? 3.4 : 1)
+    // Dar ekranda etiketler okunabilsin diye büyütülüyor; büyüyen etiket
+    // kalabalık yapmasın diye aynı anda eşik yükseltiliyor. Bayraklar
+    // eklendikten sonra harita zaten renkli — eşik bir tık daha yükseltildi,
+    // çünkü etiket + fiyat + rozet üst üste binip küreyi okunmaz yapıyordu.
+    const ls = compact ? 1.55 : 1
+    const minBox = (inDrill ? 150 : 620) * (compact ? 6 : 1)
 
     const placed: Box[] = []
-    const pills: Array<{ code: string; iconKey: string; name: string; x: number; y: number; w: number; compact: boolean }> = []
-    const labels: Array<{ code: string; name: string; x: number; y: number; price: boolean }> = []
+    const pills: Array<{ id: string; iconKey: string; name: string; x: number; y: number; w: number; compact: boolean }> = []
+    const labels: Array<{ id: string; name: string; x: number; y: number; price: boolean }> = []
     const fits = (b: Box) => !placed.some((p) => overlaps(b, p))
+    // Aynı bölgenin ikinci poligonu etiket ALMAZ: Bosna'nın 9 parçası
+    // dokuz kez "Bosna" yazdırıyordu. Adaylar alana göre sıralı olduğu için
+    // etiketi en büyük parça alır.
+    const annotated = new Set<string>()
 
     const candidates = src
       .filter((s) => s.screen && s.box >= minBox)
@@ -348,6 +380,7 @@ export default function Globe(props: GlobeProps) {
     for (const s of candidates) {
       const key = s.fill?.leaderKey
       if (!key) continue
+      if (annotated.has(s.code)) continue
       const full = shortLabel(key, inDrill ? 14 : 18)
       const tiny = shortLabel(key, 7)
       const variants: Array<{ name: string; w: number; compact: boolean }> = [
@@ -358,13 +391,15 @@ export default function Globe(props: GlobeProps) {
       const chosen = variants.find((v) => fits({ x: s.screen![0], y: s.screen![1], w: (v.w + 4) * ls, h: 22 * ls }))
       if (!chosen) continue
       placed.push({ x: s.screen![0], y: s.screen![1], w: (chosen.w + 4) * ls, h: 22 * ls })
-      pills.push({ code: s.code, iconKey: key, name: chosen.name, x: s.screen![0], y: s.screen![1], w: chosen.w, compact: chosen.compact })
+      annotated.add(s.code)
+      pills.push({ id: s.id, iconKey: key, name: chosen.name, x: s.screen![0], y: s.screen![1], w: chosen.w, compact: chosen.compact })
     }
 
     // 2) Boş bölgeler: isim + fiyat etiketi ("burası satılık" hissi).
     //    Tam ad sığmazsa kısaltılmışı denenir; ancak o da sığmazsa atlanır.
     for (const s of candidates) {
       if (s.fill?.leaderKey) continue
+      if (annotated.has(s.code)) continue
       const full = s.name.length > 16 ? s.name.slice(0, 15) + '…' : s.name
       const short = s.name.length > 8 ? s.name.slice(0, 7) + '…' : s.name
       const chosen = [full, short].find((n) =>
@@ -372,12 +407,88 @@ export default function Globe(props: GlobeProps) {
       )
       if (!chosen) continue
       placed.push({ x: s.screen![0], y: s.screen![1], w: (chosen.length * 5.6 + 10) * ls, h: 20 * ls })
+      annotated.add(s.code)
       // Fiyat etiketi yalnız gerçekten geniş bölgelerde; küçükte kalabalık yapar.
-      labels.push({ code: s.code, name: chosen, x: s.screen![0], y: s.screen![1], price: s.box > minBox * 3.2 })
+      labels.push({
+        id: s.id, name: chosen, x: s.screen![0], y: s.screen![1],
+        price: s.box > minBox * (compact ? 4.5 : 3.2),
+      })
     }
 
     return { pills, labels, priceCents, ls }
   }, [inDrill, childShapes, countryShapes, priceAdmin1Cents, priceCountryCents, compact])
+
+  /**
+   * Bayrak desenleri — tembel ve birikimli.
+   *
+   * 241 ülkenin bayrağını baştan <defs>'e koymak ilk açılışta ~240 SVG isteği
+   * demekti. Bunun yerine yalnız EKRANDA GÖRÜNEN ve etiket eşiğini geçen
+   * ülkelerin deseni tanımlanır; küre döndükçe küme büyür, girenler bir daha
+   * çıkarılmaz (tarayıcı önbelleğindeki bayrak yeniden istenmez ve desen
+   * listesi her karede değişip <defs>'i yeniden kurmaz).
+   */
+  const flagCodes = useRef<Set<string>>(new Set())
+  const [flagVersion, setFlagVersion] = useState(0)
+
+  useEffect(() => {
+    if (!flagsOn) return
+    let added = false
+    for (const s of countryShapes) {
+      // Eşik: ekranda birkaç pikselden büyük olsun. Ufuktaki ince şeritler
+      // için bayrak indirmenin görsel karşılığı yok. Düşük tutuluyor —
+      // küçük ülkeler de bayraklarını almalı.
+      if (!s.screen || s.box < 12) continue
+      if (flagCodes.current.has(s.code) || !hasFlag(s.code)) continue
+      flagCodes.current.add(s.code)
+      added = true
+    }
+    if (added) setFlagVersion((v) => v + 1)
+  }, [countryShapes, flagsOn])
+
+  /**
+   * Desenler her karede yeniden ölçülür.
+   *
+   * patternContentUnits="objectBoundingBox" ile desen path'in TÜM sınır
+   * kutusuna yayılıyordu; uzak adaları olan ülkelerde bu kutu neredeyse küre
+   * kadar olduğu için bayrak tanınmaz hâle geliyordu. Şimdi desen kutusu
+   * userSpaceOnUse ile ana kara parçasına oturtuluyor ve 4:3 oranı korunuyor;
+   * ülkenin kalan parçalarına desen TEKRARIYLA ulaşıyor.
+   *
+   * Maliyet: kare başına ~görünen ülke sayısı kadar küçük düğüm. Aynı karede
+   * zaten 241 path'in 'd' değeri yeniden hesaplanıyor; bunun yanında ihmal
+   * edilebilir.
+   */
+  const flagPatterns = useMemo(() => {
+    if (!flagsOn) return []
+    const out: Array<{ code: string; url: string; x: number; y: number; w: number; h: number }> = []
+    // Desen id'si koddan üretiliyor; aynı kod iki kez desen üretirse hem
+    // yinelenen React anahtarı hem yinelenen SVG id'si oluşurdu.
+    const done = new Set<string>()
+    for (const s of countryShapes) {
+      if (!flagCodes.current.has(s.code) || !s.main || done.has(s.code)) continue
+      const url = flagUrl(s.code)
+      if (!url) continue
+      done.add(s.code)
+      // Ana parçayı TAM örtecek en küçük 4:3 dikdörtgen, merkezine hizalı.
+      const w = Math.max(s.main.w, (s.main.h * 4) / 3)
+      const h = (w * 3) / 4
+      out.push({
+        code: s.code,
+        url,
+        x: s.main.x + s.main.w / 2 - w / 2,
+        y: s.main.y + s.main.h / 2 - h / 2,
+        w,
+        h,
+      })
+    }
+    return out
+    // flagVersion: küme büyüdüğünde yeni ülkeler de desen alsın.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countryShapes, flagsOn, flagVersion])
+
+  // Dolgu YALNIZ bu karede deseni üretilmiş ülkeye verilir; aksi halde
+  // var olmayan bir desene işaret eden path saydam kalırdı.
+  const flagReady = useMemo(() => new Set(flagPatterns.map((p) => p.code)), [flagPatterns])
 
   const spherePath = useMemo(() => path({ type: 'Sphere' }) || '', [path])
 
@@ -407,6 +518,29 @@ export default function Globe(props: GlobeProps) {
           <filter id="pillShadow" x="-40%" y="-40%" width="180%" height="180%">
             <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#1f2b3e" floodOpacity="0.28" />
           </filter>
+
+          {/* Desen kutusu ana kara parçasına oturur ve 4:3 oranını korur;
+              görüntü esnemez, ülkenin uzak parçalarına tekrarla ulaşır. */}
+          {flagPatterns.map((p) => (
+            <pattern
+              key={p.code}
+              id={`flag-${p.code}`}
+              patternUnits="userSpaceOnUse"
+              x={p.x}
+              y={p.y}
+              width={p.w}
+              height={p.h}
+            >
+              <image
+                href={p.url}
+                x={0}
+                y={0}
+                width={p.w}
+                height={p.h}
+                preserveAspectRatio="none"
+              />
+            </pattern>
+          ))}
         </defs>
 
         <path d={spherePath} fill="url(#ocean)" filter={compact ? undefined : "url(#globeShadow)"} />
@@ -416,12 +550,16 @@ export default function Globe(props: GlobeProps) {
           {countryShapes.map((s) => {
             const isDrilled = s.code === drillCode
             const f = s.fill
+            // Bayrak varsa taban dolgu odur; sahiplik rengi ÜSTÜNE ince bir
+            // tabaka olarak gelir (aşağıdaki katman) — böylece hem ülke
+            // tanınır hem "burası satıldı" bilgisi kaybolmaz.
+            const flag = flagReady.has(s.code) ? `url(#flag-${s.code})` : null
             return (
               <path
-                key={s.code}
+                key={s.id}
                 d={s.d}
                 className={`terr clickable${inDrill && !isDrilled ? ' terr-bg' : ''}`}
-                fill={isDrilled && inDrill ? '#eef3f8' : f?.color || 'var(--land)'}
+                fill={isDrilled && inDrill ? '#eef3f8' : flag || f?.color || 'var(--land)'}
                 stroke={f ? '#ffffff' : 'var(--land-stroke)'}
                 strokeWidth={f ? 1.1 : 0.55}
                 opacity={inDrill && !isDrilled ? 0.4 : 1}
@@ -434,17 +572,37 @@ export default function Globe(props: GlobeProps) {
           })}
         </g>
 
+        {/* Atmosfer perdesi: bayraklar açıkken kara katmanı tek düğümle
+            yumuşatılır. Ülke başına ayrı bir örtü path'i koymak 200+ düğüm
+            demekti; küre yüzeyinin tamamına tek path yeter. */}
+        {flagsOn && !inDrill && (
+          <path d={spherePath} fill="#ffffff" opacity={0.16} pointerEvents="none" />
+        )}
+
+        {/* Sahiplik tabakası: bayrağın üstünde markanın rengi. */}
+        {flagsOn && !inDrill && (
+          <g pointerEvents="none">
+            {countryShapes
+              .filter((s) => s.fill?.color && flagReady.has(s.code))
+              .map((s) => (
+                <path key={`own-${s.id}`} d={s.d} fill={s.fill!.color as string} opacity={0.42} />
+              ))}
+          </g>
+        )}
+
         {inDrill && (
           <g>
             {childShapes.map((s) => {
               const f = s.fill
               const isSel = s.code === selectedCode
+              // Boş iller ülkenin bayrak renginin soluk bir tonuyla boyanır:
+              // içine girilen ülke kendi paletiyle görünür.
               return (
                 <path
-                  key={s.code}
+                  key={s.id}
                   d={s.d}
                   className="terr clickable"
-                  fill={f?.color || '#e9eef5'}
+                  fill={f?.color || emptySubFill}
                   stroke={isSel ? 'var(--ink)' : '#ffffff'}
                   strokeWidth={isSel ? 2.2 : 0.9}
                   data-code={s.code}
@@ -460,7 +618,7 @@ export default function Globe(props: GlobeProps) {
         {!inDrill && selectedCode && (
           <g>
             {countryShapes.filter((s) => s.code === selectedCode).map((s) => (
-              <path key="sel" d={s.d} fill="none" stroke="var(--ink)" strokeWidth="2.2" pointerEvents="none" />
+              <path key={s.id} d={s.d} fill="none" stroke="var(--ink)" strokeWidth="2.2" pointerEvents="none" />
             ))}
           </g>
         )}
@@ -468,7 +626,7 @@ export default function Globe(props: GlobeProps) {
         {/* Boş bölge: isim + fiyat etiketi */}
         <g pointerEvents="none">
           {annotations.labels.map((l) => (
-            <g key={`lb-${l.code}`} transform={`translate(${l.x}, ${l.y}) scale(${annotations.ls})`}>
+            <g key={`lb-${l.id}`} transform={`translate(${l.x}, ${l.y}) scale(${annotations.ls})`}>
               <text className="terr-label" x={0} y={l.price ? -4 : 0} textAnchor="middle">{l.name}</text>
               {l.price && (
                 <g transform="translate(0, 9)">
@@ -486,7 +644,7 @@ export default function Globe(props: GlobeProps) {
         <g pointerEvents="none">
           {annotations.pills.map((p) => (
             <g
-              key={`pill-${p.code}`}
+              key={`pill-${p.id}`}
               transform={`translate(${p.x}, ${p.y}) scale(${annotations.ls}) translate(${-p.w / 2}, -10)`}
               filter={compact ? undefined : "url(#pillShadow)"}
             >
@@ -520,18 +678,62 @@ function shortLabel(key: string, max = 18): string {
   return s.length > max ? s.slice(0, max - 1) + '…' : s
 }
 
-/** Path 'd' string'inden kaba bounding box — etiket gösterme kararı için. */
-function pathBounds(d: string): [[number, number], [number, number]] {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+/**
+ * Path'i TEK geçişte ölçer: toplam sınır kutusu alanı + ana kara parçası.
+ *
+ * Ana parça neden ayrı: Natural Earth'te Fransa (Guyane, Réunion…), ABD
+ * (Alaska), Rusya (tarih çizgisini aşan uç) gibi ülkeler tek path içinde
+ * dünyaya dağılmış parçalar taşıyor. Path'in bütününün sınır kutusu böyle bir
+ * ülkede neredeyse tüm küre oluyor (Fransa: 2275x1893 px) ve bayrak o dev
+ * kutuya yayılınca her kara parçasına tek renkli bir dilim düşüyordu.
+ * 'M' ile ayrılan alt yolların en büyüğü ölçü alınır.
+ */
+type SubBox = { x: number; y: number; w: number; h: number; area: number }
+
+function measurePath(d: string): {
+  box: number
+  main: { x: number; y: number; w: number; h: number } | null
+} {
   const re = /(-?\d+(?:\.\d+)?)[, ](-?\d+(?:\.\d+)?)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(d))) {
-    const x = +m[1], y = +m[2]
-    if (x < minX) minX = x
-    if (y < minY) minY = y
-    if (x > maxX) maxX = x
-    if (y > maxY) maxY = y
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let sx = Infinity, sy = Infinity, ex = -Infinity, ey = -Infinity
+  // Nesne içinde tutuluyor: kapanış fonksiyonundaki atamayı TypeScript'in
+  // akış analizi düz bir `let` üzerinde göremiyor.
+  const acc: { best: SubBox | null } = { best: null }
+
+  const closeSub = () => {
+    if (!Number.isFinite(sx)) return
+    const w = ex - sx, h = ey - sy
+    const area = w * h
+    if (w > 0 && h > 0 && (!acc.best || area > acc.best.area)) acc.best = { x: sx, y: sy, w, h, area }
+    sx = Infinity; sy = Infinity; ex = -Infinity; ey = -Infinity
   }
-  if (!Number.isFinite(minX)) return [[0, 0], [0, 0]]
-  return [[minX, minY], [maxX, maxY]]
+
+  // 'M' alt yol başlangıcı; her seferinde biriken kutu kapatılır.
+  let i = 0
+  while (i < d.length) {
+    const next = d.indexOf('M', i + 1)
+    const chunk = d.slice(i, next === -1 ? d.length : next)
+    re.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(chunk))) {
+      const x = +m[1], y = +m[2]
+      if (x < minX) minX = x
+      if (y < minY) minY = y
+      if (x > maxX) maxX = x
+      if (y > maxY) maxY = y
+      if (x < sx) sx = x
+      if (y < sy) sy = y
+      if (x > ex) ex = x
+      if (y > ey) ey = y
+    }
+    closeSub()
+    if (next === -1) break
+    i = next
+  }
+
+  const box = Number.isFinite(minX) ? (maxX - minX) * (maxY - minY) : 0
+  const b = acc.best
+  return { box, main: b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null }
 }
+

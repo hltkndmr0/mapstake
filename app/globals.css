@@ -881,3 +881,471 @@ body:has(.doc) { overflow: auto; }
 
 /* Logo tek flex öğesi olmalı: .brand'in gap'i kelimeyi ikiye bölüyordu. */
 .brand .wordmark { display: inline; white-space: nowrap; }
+
+/* ==========================================================================
+   KATEGORİLER + BAYRAKLAR
+
+   Kategori çubuğu sahnenin üst ortasında durur: sol üstteki marka kartı ile
+   sağ üstteki sayaçlar arasındaki boşluk. Kaydırılabilir — 15 kategori satır
+   kırıp kürenin üstünü kapatmasın.
+   ========================================================================== */
+.o-tc {
+  top: 14px; left: 50%; transform: translateX(-50%);
+  width: min(58vw, 760px); max-width: calc(100vw - 32px);
+}
+
+.catbar {
+  display: flex; gap: 6px; align-items: center;
+  padding: 6px; overflow-x: auto; overflow-y: hidden;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  scrollbar-width: none;
+}
+.catbar::-webkit-scrollbar { display: none; }
+
+.cat-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 999px;
+  background: transparent; border: 1px solid transparent;
+  color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600;
+  white-space: nowrap; cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.cat-chip:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+/* Seçili kategori kendi rengiyle işaretlenir: hangi yarışa baktığın
+   haritaya bakmadan okunur. */
+.cat-chip.on {
+  color: #0c1425;
+  background: var(--cat, var(--accent));
+  border-color: transparent;
+  font-weight: 700;
+}
+.cat-chip .cat-icon { font-size: 13px; line-height: 1; }
+.cat-chip .cat-count {
+  font-size: 10.5px; font-weight: 700; padding: 1px 5px; border-radius: 99px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.cat-chip.sm { padding: 6px 10px; font-size: 12px; }
+
+/* Teklif ekranındaki kategori seçici: sarmalanan bir ızgara, kaydırma yok —
+   modalda yatay kaydırma keşfedilmiyor. */
+.cat-picker {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 8px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.03);
+  max-height: 148px; overflow-y: auto;
+}
+.cat-picker .cat-chip { border-color: var(--line); }
+.cat-picker .cat-chip.on { border-color: transparent; }
+
+/* ------------------------------------------------------------------ bayrak */
+.flag {
+  display: inline-block; flex: none; vertical-align: middle;
+  border-radius: 2px; object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.flag-blank { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
+
+.chip.cat {
+  background: color-mix(in srgb, var(--cat, var(--accent)) 18%, transparent);
+  color: var(--cat, var(--accent));
+  border-color: color-mix(in srgb, var(--cat, var(--accent)) 34%, transparent);
+}
+
+.rank-meta { display: inline-flex; align-items: center; gap: 5px; }
+
+.link { color: var(--accent); text-decoration: none; font-weight: 600; }
+.link:hover { text-decoration: underline; }
+
+.icon-btn.on { background: rgba(255, 201, 60, 0.16); color: var(--accent); }
+
+/* --------------------------------------------- bölgenin kategori tablosu */
+.cat-standings { border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.cat-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 10px 4px;
+}
+.cat-cell {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  padding: 8px 9px; border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cat, var(--line-strong));
+  color: var(--ink); font: inherit; cursor: pointer; min-width: 0;
+}
+.cat-cell:hover { background: rgba(255, 255, 255, 0.08); border-color: var(--line-strong); }
+/* Boş kategori satılık envanterdir: kesik çerçeve "burası açık" der. */
+.cat-cell.open { border-style: dashed; background: transparent; }
+.cat-cell-icon { font-size: 15px; line-height: 1; }
+.cat-cell-main { min-width: 0; flex: 1; }
+.cat-cell .nm {
+  display: block; font-size: 12.5px; font-weight: 650;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cat-cell .am {
+  display: block; font-size: 11px; color: var(--muted-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px), (max-height: 640px) {
+  /* Dar ekranda çubuk markanın ALTINA iner ve tam genişliğe yayılır:
+     üst orta, logo ile sayaçların arasında kalan bir şerit değil. */
+  .o-tc {
+    top: 56px; left: 10px; right: 10px; width: auto; max-width: none;
+    transform: none;
+  }
+  .catbar { border-radius: var(--r-md); padding: 5px; }
+  .cat-chip { padding: 6px 10px; font-size: 12px; }
+  .cat-grid { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   LİSTE GÖRÜNÜMÜ (/list)
+
+   Haritanın okuma dostu ikizi. body { overflow: hidden } sahne için gerekli
+   olduğundan liste kendi kaydırma bağlamını kurar (fixed + overflow-y).
+   ========================================================================== */
+.list-page {
+  position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden;
+  background:
+    radial-gradient(900px 600px at 20% -5%, #17253e 0%, transparent 60%),
+    linear-gradient(180deg, var(--bg-2), var(--bg));
+}
+
+.list-top {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(8, 13, 24, 0.86);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+}
+.list-top-inner {
+  display: flex; align-items: center; gap: 14px;
+  max-width: 1080px; margin: 0 auto; padding: 12px 20px;
+}
+.list-crumbs {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  font-size: 13.5px; color: var(--muted); overflow-x: auto; scrollbar-width: none;
+}
+.list-crumbs::-webkit-scrollbar { display: none; }
+.list-crumbs a {
+  display: inline-flex; align-items: center; gap: 6px;
+  text-decoration: none; color: var(--muted); white-space: nowrap;
+  padding: 4px 8px; border-radius: var(--r-xs);
+}
+.list-crumbs a:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+.list-crumbs [aria-current] { color: var(--ink); font-weight: 650; white-space: nowrap; }
+
+.list-catbar {
+  max-width: 1080px; margin: 0 auto 10px; border-radius: var(--r-md);
+  background: transparent; border: 0; box-shadow: none; backdrop-filter: none;
+  padding: 0 20px 2px;
+}
+.list-catbar .cat-chip { text-decoration: none; border: 1px solid var(--line); }
+.list-catbar .cat-chip.on { border-color: transparent; }
+
+.list-body { max-width: 1080px; margin: 0 auto; padding: 22px 20px 80px; }
+
+.list-hero { padding: 8px 0 22px; }
+.list-hero h1 {
+  display: flex; align-items: center; gap: 12px;
+  margin: 6px 0 8px; font-size: clamp(30px, 5vw, 46px);
+}
+.list-hero h1 .flag { border-radius: 3px; }
+.list-sub { margin: 0; color: var(--muted); max-width: 62ch; font-size: 14.5px; }
+.list-stats {
+  display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 16px;
+  font-size: 13px; color: var(--muted);
+}
+.list-stats strong {
+  color: var(--ink); font-size: 17px; font-variant-numeric: tabular-nums;
+  margin-right: 5px;
+}
+
+.list-section { margin-top: 34px; }
+.list-section-head { margin-bottom: 12px; }
+.list-section-head h2 { margin: 0 0 3px; font-size: 19px; }
+
+.list-empty {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+  padding: 26px; border: 1px dashed var(--line-strong); border-radius: var(--r-lg);
+  color: var(--muted);
+}
+.list-empty p { margin: 0; }
+
+/* ------------------------------------------------------------ sıralama */
+.lrank { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lrank li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+}
+.lrank li.leader {
+  border-color: rgba(255, 201, 60, 0.4);
+  background: linear-gradient(90deg, rgba(255, 201, 60, 0.1), var(--surface) 42%);
+}
+.lrank-no {
+  flex: none; width: 30px; text-align: center;
+  font-variant-numeric: tabular-nums; font-weight: 700; color: var(--muted);
+}
+.lrank li.leader .lrank-no { color: var(--accent); }
+.lrank .avatar { flex: none; border-radius: 8px; background: rgba(255,255,255,0.06); }
+.lrank-main { flex: 1; min-width: 0; }
+.lrank-name {
+  display: block; font-weight: 650; font-size: 14.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lrank-meta {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  font-size: 12px; color: var(--muted-dim); margin-top: 2px;
+}
+.lrank-amt {
+  flex: none; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 15px;
+}
+
+/* ------------------------------------------------- kategori kartları */
+.lcat-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+}
+.lcat {
+  display: flex; align-items: center; gap: 11px; text-decoration: none;
+  padding: 13px 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--cat, var(--line-strong));
+  color: var(--ink); min-width: 0;
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+.lcat:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-1px); }
+/* Boş kategori = satılık envanter. Kesik çerçeve bunu söyler. */
+.lcat.open { border-style: dashed; background: transparent; }
+.lcat-icon { font-size: 19px; line-height: 1; flex: none; }
+.lcat-main { flex: 1; min-width: 0; }
+.lcat-name { display: block; font-weight: 650; font-size: 14px; }
+.lcat-lead {
+  display: block; font-size: 12px; color: var(--muted-dim); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lcat-amt { flex: none; font-size: 11.5px; color: var(--muted-dim); }
+
+/* --------------------------------------------------------- bölge listesi */
+.lterr { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.lterr-row {
+  display: flex; align-items: center; gap: 12px; text-decoration: none;
+  padding: 10px 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink);
+}
+.lterr-row:hover { background: rgba(255, 255, 255, 0.07); border-color: var(--line-strong); }
+.lterr-row.open { background: transparent; border-style: dashed; }
+.lterr-no {
+  flex: none; width: 26px; text-align: right;
+  font-size: 12px; color: var(--muted-dim); font-variant-numeric: tabular-nums;
+}
+.lterr-main { flex: 1; min-width: 0; }
+.lterr-name {
+  display: block; font-weight: 600; font-size: 14.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lterr-meta {
+  display: block; font-size: 12px; color: var(--muted-dim); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lterr-amt {
+  flex: none; text-align: right; font-weight: 700;
+  font-variant-numeric: tabular-nums; font-size: 14.5px;
+}
+.lterr-sub {
+  display: block; font-size: 11px; font-weight: 500; color: var(--muted-dim);
+}
+
+.list-foot { margin-top: 46px; padding-top: 18px; border-top: 1px solid var(--line); }
+
+@media (max-width: 700px) {
+  .list-top-inner { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
+  .list-top-inner .brand { font-size: 14px; }
+  .list-body { padding: 16px 14px 70px; }
+  .list-catbar { padding: 0 14px 2px; }
+  .lrank li { padding: 10px; gap: 9px; }
+  .lrank .visit { display: none; }
+  .lterr-row { padding: 9px 10px; gap: 9px; }
+}
+
+/* ==========================================================================
+   MOBİL SIKILAŞTIRMA
+
+   Kategori rozetleri, bayraklar ve sıralama satırları eklendikten sonra dar
+   ekranda satırlar iki-üç satıra taşıyordu. Burada yalnız ÖLÇÜ küçülüyor —
+   hiçbir bilgi gizlenmiyor, hiyerarşi (isim > tutar > meta) korunuyor.
+   ========================================================================== */
+@media (max-width: 700px) {
+  /* ---------------------------------------------------------- liste başı */
+  .list-top-inner { padding: 9px 12px; gap: 8px; flex-wrap: nowrap; }
+  .list-top-inner .brand { font-size: 13px; padding: 6px 10px 6px 7px; gap: 6px; }
+  .list-top-inner .brand .dot { width: 15px; height: 15px; }
+  .list-crumbs { font-size: 12px; gap: 4px; }
+  .list-crumbs a { padding: 3px 5px; }
+  .list-top-inner .btn { padding: 6px 9px; font-size: 11.5px; white-space: nowrap; }
+
+  .list-catbar { padding: 0 12px 4px; gap: 5px; }
+  .list-catbar .cat-chip, .catbar .cat-chip {
+    padding: 5px 9px; font-size: 11.5px; gap: 5px;
+  }
+  .cat-chip .cat-icon { font-size: 11.5px; }
+
+  /* -------------------------------------------------------- liste gövdesi */
+  .list-body { padding: 12px 12px 64px; }
+  .list-hero { padding: 2px 0 14px; }
+  .list-hero h1 { font-size: 26px; gap: 9px; margin: 4px 0 6px; }
+  .list-hero h1 .flag { width: 26px !important; height: 20px !important; }
+  .list-sub { font-size: 13px; }
+  .list-stats { gap: 4px 14px; margin-top: 10px; font-size: 11.5px; }
+  .list-stats strong { font-size: 14px; margin-right: 3px; }
+
+  .list-section { margin-top: 22px; }
+  .list-section-head h2 { font-size: 16px; }
+  .list-section-head .note { font-size: 11.5px; }
+
+  /* Sıralama satırı: ad üstte, rozet ve meta altta tek satırda kalsın. */
+  .lrank li { padding: 8px 9px; gap: 8px; border-radius: var(--r-sm); }
+  .lrank-no { width: 20px; font-size: 12px; }
+  .lrank .avatar { width: 26px; height: 26px; }
+  .lrank-name { font-size: 13px; }
+  .lrank-meta { font-size: 10.5px; gap: 5px; margin-top: 1px; }
+  .lrank-amt { font-size: 13.5px; }
+
+  /* Kategori rozeti satırın yarısını yemesin. */
+  .chip.cat { font-size: 9.5px; padding: 1px 5px; letter-spacing: 0; }
+
+  .lcat-grid { grid-template-columns: 1fr; gap: 6px; }
+  .lcat { padding: 10px 11px; gap: 9px; }
+  .lcat-icon { font-size: 16px; }
+  .lcat-name { font-size: 13px; }
+  .lcat-lead, .lcat-amt { font-size: 11px; }
+
+  .lterr-row { padding: 8px 9px; gap: 9px; border-radius: var(--r-sm); }
+  .lterr-no { width: 18px; font-size: 11px; }
+  .lterr-row .flag { width: 22px !important; height: 17px !important; }
+  .lterr-name { font-size: 13px; }
+  .lterr-meta { font-size: 10.5px; }
+  .lterr-amt { font-size: 13px; }
+  .lterr-sub { font-size: 10px; }
+
+  .list-foot { margin-top: 30px; }
+}
+
+@media (max-width: 900px), (max-height: 640px) {
+  /* Haritadaki kategori çubuğu ve panel tablosu da aynı ölçüde küçülür. */
+  .o-tc { top: 52px; }
+  .catbar { padding: 4px; gap: 4px; }
+  .catbar .cat-chip { padding: 5px 9px; font-size: 11.5px; }
+
+  .cat-standings .panel-eyebrow { padding: 8px 10px 2px !important; }
+  .cat-grid { gap: 5px; padding: 0 10px 4px; }
+  .cat-cell { padding: 7px 8px; gap: 7px; }
+  .cat-cell-icon { font-size: 13px; }
+  .cat-cell .nm { font-size: 12px; }
+  .cat-cell .am { font-size: 10.5px; }
+
+  /* Teklif ekranındaki kategori seçici modalın yarısını kaplıyordu. */
+  .cat-picker { max-height: 108px; padding: 6px; gap: 5px; }
+  .cat-picker .cat-chip { padding: 5px 8px; font-size: 11.5px; }
+}
+
+/* ==========================================================================
+   MOBİL SAHNE DÜZENİ
+
+   Dar ekranda üst şerit üç ayrı kutu taşıyor: marka + araç düğmeleri,
+   sayaçlar, kategori çubuğu. Kategori çubuğu eklendikten sonra bunlar
+   birbirinin üstüne biniyordu. Burada ölçüler değil DÜZEN değişiyor:
+   düğmeler küçülür, sayaç kartı tek rakama iner, çubuk altta tam genişlikte
+   kendi satırını alır.
+   ========================================================================== */
+@media (max-width: 900px), (max-height: 640px) {
+  .brand-row { gap: 6px; }
+  /* Düğmeler artık bayraklı (parlak) bir haritanın üstünde duruyor:
+     yarı saydam zemin okunmuyordu, opak yüzeye alındı. */
+  .icon-btn {
+    width: 28px; height: 28px; font-size: 12.5px; border-radius: var(--r-xs);
+    background: var(--surface-solid); border-color: var(--line-strong);
+    color: var(--ink); backdrop-filter: blur(10px);
+  }
+
+  /* Sayaçlar: dar ekranda tek gösterge yeter. Ayrıntı zaten liste
+     görünümünde ve panelde var; burada amaç "canlı ve dolu" hissi. */
+  .stats { padding: 7px 11px; gap: 0; }
+  .stats-row:not(:last-child) { display: none; }
+  /* 420 px altındaki eski kural üçüncü satırı gizliyordu; artık görünür
+     kalan TEK satır o. Daha yüksek özgüllük ile geri açılıyor. */
+  .stats .stats-row:last-child { display: flex; }
+  .stats-row .k { font-size: 9px; }
+  .stats-row .v { font-size: 14px; }
+}
+
+/* 430 px altı: marka adı yazısı düğmelere yer açmak için kısalır. */
+@media (max-width: 430px) {
+  .brand { font-size: 13px !important; padding: 6px 10px 6px 7px !important; }
+  .brand .dot { width: 15px !important; height: 15px !important; }
+  .o-tc { top: 48px; }
+}
+
+/* -------------------------------------------------------------- sayfalama */
+.pager {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 14px; flex-wrap: wrap;
+}
+.pager-step, .pager-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; height: 34px; padding: 0 11px;
+  border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted);
+  text-decoration: none; font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pager-step:hover, .pager-num:hover { background: rgba(255, 255, 255, 0.09); color: var(--ink); }
+.pager-num.on {
+  background: var(--accent); border-color: transparent; color: #17202f; font-weight: 700;
+}
+/* Uçtaki düğme: tıklanacak bir şey olmadığında bağlantı da yok (href yok),
+   görünüm de sönük. */
+.pager-step.off { opacity: 0.35; pointer-events: none; }
+.pager-nums { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center; }
+.pager-gap { color: var(--muted-dim); padding: 0 2px; }
+
+@media (max-width: 700px) {
+  .pager { gap: 6px; margin-top: 10px; }
+  .pager-step, .pager-num { min-width: 30px; height: 30px; padding: 0 8px; font-size: 12px; }
+  .pager-nums { gap: 4px; }
+}
+
+/* --------------------------------------- paylaşım sayfası: kategori geçişi
+   Her kategorinin kendi adresi ve kendi paylaşım kartı var. Boş olanlar da
+   listede: bir ziyaretçinin "burada otomotiv boş" görüp satın alması,
+   sayfanın var oluş sebebi. */
+.share-cats {
+  display: grid; gap: 7px; margin: 14px 0 34px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.share-cat {
+  display: flex; align-items: center; gap: 10px; text-decoration: none;
+  padding: 11px 13px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--cat, var(--line-strong));
+  color: var(--ink); min-width: 0;
+}
+.share-cat:hover { background: rgba(255, 255, 255, 0.08); border-color: var(--line-strong); }
+.share-cat.open { border-style: dashed; background: transparent; }
+.share-cat.on {
+  border-color: var(--accent); background: rgba(255, 201, 60, 0.1); border-style: solid;
+}
+.share-cat-icon { font-size: 17px; line-height: 1; flex: none; }
+.share-cat-main { min-width: 0; flex: 1; }
+.share-cat .nm { display: block; font-size: 13.5px; font-weight: 650; }
+.share-cat .am {
+  display: block; font-size: 11.5px; color: var(--muted-dim); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+@media (max-width: 700px) {
+  .share-cats { grid-template-columns: 1fr; gap: 6px; }
+  .share-cat { padding: 9px 11px; }
+}

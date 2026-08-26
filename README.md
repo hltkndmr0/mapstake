@@ -1,6 +1,6 @@
 # Cartogram
 
-Dünya haritası üzerinde reklam yerleşimi satan bir pazaryeri. Her ülke ve her il/eyalet ayrı bir reklam alanı; sıralama o bölgeye yapılan **toplam harcamaya** göre belirleniyor.
+Dünya haritası üzerinde reklam yerleşimi satan bir pazaryeri. Her ülke ve her il/eyalet ayrı bir reklam alanı; sıralama o bölgeye yapılan **toplam harcamaya** göre belirleniyor. Yarış **kategori içinde** yapılır: bir yazılım markası bir otomotiv markasını geçmek zorunda değil.
 
 **Canlı:** https://world-six-xi.vercel.app
 
@@ -13,6 +13,8 @@ Dünya haritası üzerinde reklam yerleşimi satan bir pazaryeri. Her ülke ve h
 Döndürülebilir bir küre üzerinde 241 ülke ve 4.454 il/eyalet var. Bir markanın sahibi bir bölgeye para koyuyor, o bölgedeki toplam harcaması sıralamasını belirliyor. En yüksek toplam #1 oluyor ve markası haritada görünüyor.
 
 - **İki seviyeli envanter.** Ülke ve alt birimleri **ayrı** yarışır. Türkiye'nin #1'i olmak İstanbul'un #1'i olmak demek değildir.
+- **Kategori bazlı yarış.** Envanter birimi (bölge × kategori). "Türkiye / Yazılım" ile "Türkiye / Otomotiv" ayrı slotlardır, ayrı liderleri vardır.
+- **İki görünüm.** Küre ve `/list`. Liste dünyadan ülkeye, ülkeden ile daralır ve her kombinasyonun kendi adresi vardır.
 - **Hesap yok.** Kimlik, gönderilen normalize edilmiş bağlantıdır (`https://www.ornek.com/fiyatlar?x=1` → `ornek.com`).
 - **Kümülatif sıralama.** Ödemeler birikir. Geçildiyseniz baştan ödemezsiniz, yalnız aradaki farkı ödersiniz.
 - **Paket alım.** İl alırken "ülkeyi de al" seçilirse tek ödeme yapılır — ülke bedeli — ve il pakete dahil gelir.
@@ -20,11 +22,25 @@ Döndürülebilir bir küre üzerinde 241 ülke ve 4.454 il/eyalet var. Bir mark
 ## Ekran akışı
 
 ```
-🌍 Dünya           ülkeler, boş olanlarda $5 fiyat etiketi, dolu olanlarda marka rozeti
+🌍 Dünya           ülkeler KENDİ BAYRAKLARIYLA boyalı, boşlarda $5 fiyat etiketi
    ↓ ülkeye tıkla
-🇹🇷 Ülke            o ülkenin il/eyalet katmanı lazy yüklenir, kamera oraya döner
+🇹🇷 Ülke            il/eyalet katmanı lazy yüklenir, kamera döner, iller
+                   ülkenin bayrak renginin soluk tonuyla boyanır
    ↓ ile tıkla
-📍 İl paneli        sıralama + "ülkeyi de al" teklifi + teklif ekranı
+📍 İl paneli        kategori tablosu + sıralama + "ülkeyi de al" + teklif ekranı
+```
+
+Üstteki kategori çubuğu bu akışın tamamını filtreler: harita dolguları,
+sıralama tablosu ve panel aynı kategoriyi gösterir.
+
+Liste görünümü (`/list`) aynı envanteri metin olarak verir:
+
+```
+/list                      dünya sıralaması + kategori kartları + 241 ülke
+/list?cat=software         yalnız yazılım yarışı
+/list?c=TUR                Türkiye sıralaması + 81 il
+/list?c=TUR&cat=automotive Türkiye'nin otomotiv sıralaması
+/list?a=TR-34              İstanbul slotunun sıralaması
 ```
 
 ---
@@ -47,6 +63,20 @@ Döndürülebilir bir küre üzerinde 241 ülke ve 4.454 il/eyalet var. Bir mark
 ### Bölgeler tek tabloda
 
 `territories` tablosu hem ülkeyi hem alt birimi tutar, `parent_id` ile bağlanır. Sıralama motoru bu sayede iki seviye için de **aynı kodu** kullanır: `WHERE territory_id = $1`. Ayrı tablo olsaydı her sorgu ikiye katlanırdı.
+
+### Kategori, ayrı tablo değil bir kolon
+
+`placements.category` — birincil anahtarı `slug` olan küçük ve sabit bir
+`categories` tablosuna bakar. Sayısal id yerine slug seçilmesinin nedeni:
+aynı değer URL parametresinde (`?cat=software`), API gövdesinde ve SQL
+filtresinde geçiyor; id olsaydı üç yerde de çözümleme gerekirdi.
+
+Slot artık `(bölge, reklamveren, kategori)`. Eski `UNIQUE (bölge, reklamveren)`
+kısıtı aynı markanın iki kategoride yarışmasını engellerdi.
+
+Sıralama sorgusu tek: `AND ($2::text IS NULL OR p.category = $2)`. NULL
+geçilince bütün kategoriler tek listede yarışır ("Tümü" görünümü). İki ayrı
+sorgu yazmak sıralama kuralını iki yere kopyalamak demekti.
 
 ### Sıralama kuralı
 
@@ -87,9 +117,52 @@ o anki sıralamadan üretiliyor. Sayfa ile görsel **aynı sorguyu** (`data.ts`)
 kullanır: crawler görseli ayrı bir istekte çeker, iki kaynak olsaydı kart ile
 sayfa farklı sıralama gösterebilir ve paylaşım yanlış bilgi taşırdı.
 
+### Kategori paylaşımda YOL parçası, query değil
+
+`/t/TUR/software` — çünkü `opengraph-image` yalnız route parametrelerini görür,
+arama parametrelerini görmez. Kategori `?cat=` ile taşınsaydı sayfa
+"Türkiye'nin yazılım #1'i" derken kart bütün kategorilerin birleşik lideriyle
+çıkardı; paylaşımın kendisi yanlış bilgi olurdu.
+
+Bilinmeyen kategori 404 verir. Sessizce "bütün kategoriler"e düşseydi
+`/t/TUR/uydurma` gerçek bir sayfa gibi görünür ve paylaşıldığında başka bir
+yarışın liderini gösterirdi.
+
+Kartta emoji **yok**: satori emojiyi ancak dış bir CDN'den (twemoji) çekerek
+çizebiliyor ve kart üretimi crawler isteğinin içinde koşuyor. Kategori kimliği
+renkli nokta + isimle veriliyor.
+
 `metadataBase` sırayla `NEXT_PUBLIC_SITE_URL` → Vercel production adresi →
 `BRAND.domain` olarak çözülür. OG görselleri mutlak URL yayınlandığı için
 çözümlenmeyen bir domaine işaret etmesi kartı sessizce boş bırakır.
+
+### Toplulaştırılmış sıralamada da aynı beraberlik kuralı
+
+Liste görünümündeki "dünya sıralaması" tekil bir yerleşim değil, markanın
+kapsamdaki **bütün** yerleşimlerinin toplamıdır. Beraberlik burada
+`MIN(reached_current_total_at)` ile çözülür — tekil kuraldaki "o toplama önce
+ulaşan üstte" ilkesinin toplulaştırılmış karşılığı. Farklı bir kural
+seçilseydi harita ile liste aynı iki markayı ters sırada gösterebilirdi.
+
+### Bayraklar kendi origin'imizde
+
+`npm run flags`, `flag-icons` (MIT) setinden yalnız `index.json`'daki
+ülkelerin 4x3 SVG'sini `public/flags/` altına kopyalar ve `lib/flag-manifest.json`
+eşlemesini üretir. Gerekçe `public/geo` ile aynı: küre üzerinde aynı anda ~200
+bayrak isteniyor; üçüncü parti bir host'ta bu, her ziyaretçi için 200
+çapraz-origin isteği ve tek bir kesintide "dünyanın yarısı gri" demek.
+
+Küre bayrakları `<pattern patternContentUnits="objectBoundingBox">` ile basar:
+bayrak her ülkenin kendi sınır kutusuna oturur. Desenler **tembel ve birikimli**
+tanımlanır — yalnız ekranda görünen ve eşiği geçen ülke `<defs>`'e girer,
+girdikten sonra çıkarılmaz. 241 bayrağı baştan tanımlamak ilk açılışta 241
+istek demekti.
+
+Aksan rengi (`lib/flagColor.ts`) bayraktan çalışma anında çıkarılır: 24 px'e
+indirgenip doygunluğu düşük pikseller (beyaz/siyah/gri) elenir, kalan ton
+kovalarının en kalabalığı kazanır. Ortalama alınsaydı kırmızı-beyaz bir bayrak
+pembeye düşerdi. 238 ülke için elle renk tablosu tutmak hem baştan yanlış hem
+bakımsız kalırdı.
 
 ### Coğrafi veri build-time'da
 
@@ -125,7 +198,8 @@ Sonra:
 
 ```bash
 npm run geo      # Natural Earth verisini indirir ve derler (~40 MB indirme, bir kez)
-npm run migrate  # şemayı uygular
+npm run flags    # bayrak SVG'lerini public/flags altına kopyalar
+npm run migrate  # şemayı uygular (kategori tablosu ve kolonları dahil, idempotent)
 npm run seed     # 241 ülke + 4.454 alt birim + örnek veri
 npm run dev
 ```
@@ -137,6 +211,7 @@ Kısayol: `npm run setup` üçünü sırayla çalıştırır.
 | Komut | İş |
 |---|---|
 | `npm run geo` | Natural Earth → sadeleştirilmiş TopoJSON, ülke başına dosya |
+| `npm run flags` | `flag-icons` → `public/flags/*.svg` + `lib/flag-manifest.json` |
 | `npm run migrate` | `lib/schema.sql`'i uygular (idempotent) |
 | `npm run seed` | Bölgeleri yazar, tablo boşsa demo yerleşim ekler |
 | `npm run dev` | Geliştirme sunucusu |
@@ -163,33 +238,40 @@ vercel deploy --prod
 ```
 app/
   page.tsx                 ana sahne (board sunucuda hazırlanır → "0 / $0" yanıp sönmesi yok)
+  list/                    liste görünümü: dünya → ülke → il, kategori bazlı
   rules/  about/           kural ve sorumluluk metinleri
   pay/mock/                geçici ödeme ekranı — sağlayıcı bağlanınca silinecek
   t/[code]/                paylaşılabilir bölge sayfası + OG/Twitter kartı
+    [cat]/                 aynı sayfanın kategoriye özel hâli (/t/TUR/software)
   api/
-    board · board/children · top · territory · search · activity · stats
+    board · board/children · top · territory · search · activity · stats · categories
     quote                  fiyat hesabı (yazma yok)
     checkout               intent oluşturur + sağlayıcıya yönlendirir
     pay                    yalnız yerel geliştirme için mock ödeme onayı
     webhooks/whop          Whop imza, tutar ve para birimi doğrulaması
     click · icon
 components/
-  Globe.tsx                D3 projeksiyon, sürükleme/zoom, etiket çakışma çözümü
-  Stage.tsx                durum yönetimi, katman geçişleri, kamera
-  StakeModal.tsx           teklif ekranı, canlı quote, paket seçeneği
+  Globe.tsx                D3 projeksiyon, bayrak desenleri, etiket çakışma çözümü
+  Stage.tsx                durum yönetimi, kategori filtresi, katman geçişleri
+  StakeModal.tsx           teklif ekranı, kategori seçimi, canlı quote, paket
+  CategoryBar.tsx          kategori çubuğu (harita)
+  Flag.tsx                 bayrak görseli, eksik bayrakta yer tutucu
   TerritorySearch.tsx      haritanın klavye/ekran okuyucu alternatifi
 lib/
   db.ts                    pg havuzu, transaction yardımcıları
-  schema.sql               tek kaynak DDL
+  schema.sql               tek kaynak DDL (kategori listesi dahil)
   ranking.ts               sıralama, quote, ödeme uygulama
-  board.ts                 okuma sorguları
+  board.ts                 harita okuma sorguları
+  rankings.ts              liste görünümü sorguları (kapsam × kategori)
+  categories.ts            kategori okuma + doğrulama
+  flags.ts / flagColor.ts  bayrak eşlemesi ve aksan rengi çıkarımı
   normalize.ts             URL/sosyal profil normalizasyonu
   payments.ts              sağlayıcı arayüzü
   brand.ts                 marka metinleri + fiyat politikası (tek kaynak)
 scripts/
   build-geo.mjs · migrate.mjs · seed.mjs
 tests/
-  pricing · normalize · whop-webhook · time
+  pricing · normalize · whop-webhook · time · flags
 ```
 
 ---
@@ -213,8 +295,12 @@ Harita fare/dokunmatik dışında da kullanılabilir olmalı. `TerritorySearch` 
 - **Moderasyon yok.** Herkes herhangi bir bağlantı ekleyebiliyor. Şikâyet formu, gizle/engelle aksiyonları ve denetim kaydı lansman öncesi şart.
 - **Reklamveren profil sayfaları yok.** (`/brand/<link>` — planlı.)
 - **Testler yalnız saf fonksiyonları kapsıyor.** Fiyat matematiği, link
-  normalizasyonu, webhook imzası ve zaman etiketi test altında; veritabanına
-  dokunan `applyPayment`/`computeQuote` için test veritabanı gerekiyor.
+  normalizasyonu, webhook imzası, zaman etiketi ve bayrak eşlemesi test
+  altında; veritabanına dokunan `applyPayment`/`computeQuote` ve kategori
+  sorguları için test veritabanı gerekiyor.
+- **Kategori seçimi moderasyona bağlı değil.** Reklamveren kendi kategorisini
+  seçiyor; yanlış kategoriye girmeyi engelleyen bir denetim yok. Şikâyet
+  akışıyla birlikte ele alınmalı.
 - Natural Earth'te 95 bölge aynı ISO kodunu paylaşıyor (Bosna'nın kantonları hep `BA-BIH`). Aynı kod aynı bölge sayılır; haritadaki tüm parçalar aynı sahibi gösterir.
 
 ## Veri ve hukuk

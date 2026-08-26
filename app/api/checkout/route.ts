@@ -1,16 +1,20 @@
 import { NextResponse } from 'next/server'
 import { cancelIntent, computeQuote, createIntent, getTerritoryBy } from '@/lib/ranking'
 import { getPaymentProvider, PaymentProviderError } from '@/lib/payments'
+import { requireCategory } from '@/lib/categories'
 
 export const dynamic = 'force-dynamic'
 
 // İstemci yalnız "şu bölgeye şu linkle şu kadar" der. Fiyat burada
 // yeniden kurulur; gövdeden gelen tutar tabanın altındaysa taban uygulanır.
 export async function POST(req: Request) {
-  let body: { code?: string; url?: string; mode?: string; amountCents?: number; bundleCode?: string }
+  let body: {
+    code?: string; url?: string; mode?: string; amountCents?: number
+    bundleCode?: string; category?: string
+  }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid request' }, { status: 400 }) }
 
-  const { code, url, mode, amountCents, bundleCode } = body
+  const { code, url, mode, amountCents, bundleCode, category } = body
   if (!code || !url || (mode !== 'product' && mode !== 'social')) {
     return NextResponse.json({ error: 'Missing or invalid field' }, { status: 400 })
   }
@@ -29,7 +33,12 @@ export async function POST(req: Request) {
     bundleTerritoryId = b.id
   }
 
-  const res = await computeQuote({ territoryId: t.id, rawUrl: url, mode, amountCents, bundleTerritoryId })
+  // Kategori sunucuda doğrulanır ve intent'e YAZILIR: ödeme sonrası hangi
+  // yarışa kredi işleneceği istemcinin elinde kalmaz.
+  const res = await computeQuote({
+    territoryId: t.id, rawUrl: url, mode, amountCents, bundleTerritoryId,
+    category: await requireCategory(category),
+  })
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
 
   // Kalıcı kayıt YALNIZ burada: önizleme istekleri veritabanına dokunmaz.
@@ -53,6 +62,7 @@ export async function POST(req: Request) {
     redirectUrl,
     // Kullanıcı ödemeden önce ne aldığını net görsün diye quote'u da döneriz.
     quote: {
+      category: res.quote.category,
       amountCents: res.quote.suggestedAmountCents,
       existingTotalCents: res.quote.existingTotalCents,
       projectedTotalCents: res.quote.projectedTotalCents,

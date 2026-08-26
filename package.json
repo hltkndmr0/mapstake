@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "geo": "node scripts/build-geo.mjs",
+    "flags": "node scripts/build-flags.mjs",
     "seed": "node --env-file-if-exists=.env.local scripts/seed.mjs",
-    "setup": "npm run geo && npm run migrate && npm run seed",
+    "setup": "npm run geo && npm run flags && npm run migrate && npm run seed",
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
@@ -30,6 +31,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/topojson-client": "^3.1.5",
+    "flag-icons": "^7.5.0",
     "mapshaper": "^0.6.102",
     "tsx": "^4.23.12",
     "typescript": "^5.7.0"

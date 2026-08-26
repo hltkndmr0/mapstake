@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BRAND, formatMoney } from '@/lib/brand'
+import type { Category } from '@/lib/categories'
 import type { Detail } from './Stage'
 
 type Mode = 'product' | 'social'
 
 type Quote = {
   quoteId: string
+  category: string
   canonicalKey: string
   displayUrl: string
   existingTotalCents: number
@@ -20,8 +22,11 @@ type Quote = {
   requiredToLeadCents: number
 }
 
-export default function StakeModal({ detail, onClose, onPaid, prefill }: {
+export default function StakeModal({ detail, categories, category, onClose, onPaid, prefill }: {
   detail: Detail
+  categories: Category[]
+  /** Haritada seçili kategori; teklif ekranı bununla açılır. */
+  category: string | null
   onClose: () => void
   onPaid: (code: string) => void
   /** Ek satıştan gelindiğinde link/mod hazır gelsin. */
@@ -29,6 +34,9 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
 }) {
   const t = detail.territory
   const [mode, setMode] = useState<Mode>(prefill?.mode ?? 'product')
+  // Kategori seçimi teklifin bir parçası: fiyat da sıralama da bunun içinde
+  // hesaplanır. Filtre açıkken o kategori gelir, değilse 'other'.
+  const [cat, setCat] = useState<string>(category ?? 'other')
   const [url, setUrl] = useState(prefill?.url ?? '')
   // Ülkeyi de al: il/eyalet satın alırken sorulan ek satış.
   const [alsoCountry, setAlsoCountry] = useState(false)
@@ -37,18 +45,27 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const catScrolled = useRef(false)
+  const scrollSelectedIntoView = useCallback((el: HTMLButtonElement | null) => {
+    if (!el || catScrolled.current) return
+    catScrolled.current = true
+    el.scrollIntoView({ block: 'nearest' })
+  }, [])
+
   const dialogRef = useRef<HTMLDivElement>(null)
   const firstFieldRef = useRef<HTMLInputElement>(null)
   const restoreFocus = useRef<HTMLElement | null>(null)
   // Kullanıcı tutarı elle değiştirdiyse sunucunun önerisi onu ezmesin.
   const userEditedAmount = useRef(false)
   const lastKey = useRef<string | null>(null)
+  const lastCat = useRef<string | null>(null)
 
   const titleId = useId()
   const descId = useId()
   const urlId = useId()
   const amountId = useId()
   const urlErrId = useId()
+  const catId = useId()
 
   // --------------------------------------------------------- odak yönetimi
   useEffect(() => {
@@ -89,7 +106,7 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
           // Tutar GÖNDERİLMİYOR: sunucu tabanı ve mevcut toplamı döner,
           // yeni toplam/sıra istemcide hesaplanır. Böylece tutar alanını
           // değiştirmek ağ gidiş-dönüşü yaratmaz.
-          body: JSON.stringify({ code: t.code, url, mode }),
+          body: JSON.stringify({ code: t.code, url, mode, category: cat }),
         })
         const data = await r.json()
         if (!r.ok) { setError(data.error || 'Could not validate that URL.'); setQuote(null); return }
@@ -99,8 +116,12 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
         // KRİTİK DÜZELTME: girilen link zaten bu bölgede varsa, gereken tutar
         // FARK kadardır. Orijinal ürün bu yeniden hesaplamayı yapmadığı için
         // kullanıcıyı gereğinden fazla ödemeye yönlendiriyordu.
-        if (data.canonicalKey !== lastKey.current) {
+        // Kategori değiştiyse yarış da değişti: önerilen tutar yeniden
+        // uygulanmalı, yoksa kullanıcı başka kategorinin liderine göre
+        // hesaplanmış rakamla devam ederdi.
+        if (data.canonicalKey !== lastKey.current || data.category !== lastCat.current) {
           lastKey.current = data.canonicalKey
+          lastCat.current = data.category
           userEditedAmount.current = false
           setAmount(Math.round(data.suggestedAmountCents / 100))
         }
@@ -111,7 +132,7 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
     return () => { clearTimeout(id); ctrl.abort() }
     // amount BİLEREK bağımlılık değil — bkz. yukarıdaki not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, mode, t.code])
+  }, [url, mode, t.code, cat])
 
   const amountCents = Math.round(amount * 100)
   const floor = quote?.floorCents ?? detail.floorCents
@@ -128,11 +149,11 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
       const payload = bundling
         ? {
             code: detail.parentOffer!.code,
-            url, mode,
+            url, mode, category: cat,
             amountCents: detail.parentOffer!.requiredToLeadCents,
             bundleCode: t.code,
           }
-        : { code: t.code, url, mode, amountCents }
+        : { code: t.code, url, mode, category: cat, amountCents }
 
       const r = await fetch('/api/checkout', {
         method: 'POST',
@@ -147,7 +168,7 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
     } catch {
       setError('Could not start checkout.')
     } finally { setBusy(false) }
-  }, [quote, belowFloor, busy, t.code, url, mode, amountCents, alsoCountry, detail.parentOffer])
+  }, [quote, belowFloor, busy, t.code, url, mode, cat, amountCents, alsoCountry, detail.parentOffer])
 
   return (
     <div className="backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
@@ -176,6 +197,35 @@ export default function StakeModal({ detail, onClose, onPaid, prefill }: {
               onClick={() => { setMode('social'); lastKey.current = null }}>
               Social profile
             </button>
+          </div>
+
+          {/* Kategori: yarışın kapsamı. Yazılım markası otomotivi geçmek
+              zorunda değil — hangi listede yarıştığını burada seçiyor. */}
+          <div className="field">
+            <label htmlFor={catId}>Category</label>
+            <div className="cat-picker" role="radiogroup" aria-labelledby={catId}>
+              {categories.map((c) => (
+                <button
+                  key={c.slug}
+                  type="button"
+                  role="radio"
+                  aria-checked={cat === c.slug}
+                  // Seçili kategori listenin altında kalabiliyor ("Other" en
+                  // sonda). Görünmeyen seçim "hiçbiri seçili değil" gibi
+                  // okunuyordu; açılışta görünür alana kaydırılıyor.
+                  ref={cat === c.slug ? scrollSelectedIntoView : undefined}
+                  className={`cat-chip sm${cat === c.slug ? ' on' : ''}`}
+                  style={{ '--cat': c.color } as React.CSSProperties}
+                  onClick={() => setCat(c.slug)}
+                >
+                  <span className="cat-icon" aria-hidden="true">{c.icon}</span>
+                  <span className="cat-name">{c.name}</span>
+                </button>
+              ))}
+            </div>
+            <p className="help" id={catId}>
+              You only compete against other {(categories.find((c) => c.slug === cat)?.name || 'listings').toLowerCase()} links in {t.name}.
+            </p>
           </div>
 
           <div className="field">

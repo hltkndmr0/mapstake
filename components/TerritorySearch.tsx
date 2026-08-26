@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
+import Flag from './Flag'
 import { formatMoney } from '@/lib/brand'
 import type { BoardEntry } from './Stage'
 
@@ -130,7 +131,9 @@ export default function TerritorySearch({ index, board, onClose, onPick }: {
                 onMouseEnter={() => setActive(i)}
                 onClick={() => onPick({ code: r.code, kind: r.kind, parentCode: r.parent_code })}
               >
-                <span className="sub-swatch" style={{ background: board[r.code]?.leader?.color || 'var(--land)' }} />
+                {/* Bayrak, renk lekesinden daha hızlı tanınır: arama
+                    sonucunda hangi ülkede olduğun bir bakışta görünür. */}
+                <Flag code={r.kind === 'country' ? r.code : (r.parent_code ?? r.code)} size={20} />
                 <span className="nm">
                   {r.name}
                   <span className="sub">
