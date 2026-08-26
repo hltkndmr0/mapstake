@@ -26,12 +26,19 @@
   --live: #45d483;
   --danger: #fb7185;
 
-  /* küre (aydınlık kalır) */
+  /* Küre.
+     Okyanus bilinçli olarak KOYULAŞTIRILDI. Bayraklar gelmeden önce kara
+     açık griydi ve açık mavi deniz onunla yeterli kontrast veriyordu; artık
+     kara doygun bayrak renkleriyle dolu ve açık deniz onlarla yarışıyordu.
+     Deniz artık sahne: kıyı çizgisi keskinleşiyor, beyaz fiyat etiketleri ve
+     marka hapları denizin üstünde okunur kalıyor.
+     Yine de sayfa zemininden (--bg) belirgin şekilde açık: küre koyu
+     arayüzün içinde ışık alan tek nesne olmayı sürdürmeli. */
   --land: #dce3eb;
   --land-stroke: #b9c5d4;
-  --ocean-1: #a9d4f0;
-  --ocean-2: #6fb0dd;
-  --ocean-3: #4a86ba;
+  --ocean-1: #4d84b4;
+  --ocean-2: #2b5175;
+  --ocean-3: #16304d;
 
   --r-xs: 6px;
   --r-sm: 9px;

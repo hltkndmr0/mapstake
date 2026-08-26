@@ -544,7 +544,14 @@ export default function Globe(props: GlobeProps) {
         </defs>
 
         <path d={spherePath} fill="url(#ocean)" filter={compact ? undefined : "url(#globeShadow)"} />
-        <path d={graticule} fill="none" stroke="#ffffff" strokeOpacity="0.22" strokeWidth="0.6" />
+        {/* Izgara neredeyse görünmez tutuluyor ama SİLİNMİYOR.
+            Kara dolu görünümlerde bayraklarla yarışmasın diye çok soluk;
+            buna karşılık açık okyanusta ya da yakınlaştırılmış bir ada
+            görünümünde (ör. Kiribati) kürenin tek hacim ipucu bu. O çizgiler
+            olmadan deniz düz bir koyu alan oluyor: ne küre olduğu ne de
+            döndüğü anlaşılıyor — oysa birincil etkileşim "sürükleyip
+            döndürmek". */}
+        <path d={graticule} fill="none" stroke="#ffffff" strokeOpacity="0.09" strokeWidth="0.6" />
 
         <g>
           {countryShapes.map((s) => {
@@ -576,7 +583,7 @@ export default function Globe(props: GlobeProps) {
             yumuşatılır. Ülke başına ayrı bir örtü path'i koymak 200+ düğüm
             demekti; küre yüzeyinin tamamına tek path yeter. */}
         {flagsOn && !inDrill && (
-          <path d={spherePath} fill="#ffffff" opacity={0.16} pointerEvents="none" />
+          <path d={spherePath} fill="#ffffff" opacity={0.1} pointerEvents="none" />
         )}
 
         {/* Sahiplik tabakası: bayrağın üstünde markanın rengi. */}
